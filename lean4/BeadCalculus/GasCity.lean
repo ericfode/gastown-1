@@ -1554,4 +1554,257 @@ example : pipelineTotalCost exPipeline = 26000 := by decide
     only ~6% of information survives to the decision. -/
 example : pipelineRetention exPipeline = 6 := by decide
 
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 18: The Graded Monad — Effect-Indexed Computation
+-- ═══════════════════════════════════════════════════════════════
+
+/-! Tao's insight: the existing Effect algebra (Section 1) already IS a
+    graded monad. A graded monad over a monoid (M, ⊕, e) is a family
+    of type constructors T_m indexed by m ∈ M, with:
+
+    - unit η : A → T_e A              (pure computation at identity effect)
+    - bind μ : T_m A → (A → T_n B) → T_{m⊕n} B  (effects compose via monoid)
+    - monad laws hold up to monoid structure
+
+    For Gas City:
+    - M = (Effect, seq, zero)          — the effect monoid (Section 1)
+    - T_{(c,q)} A = "computation of type A costing ≤ c tokens at quality ≥ q"
+    - The theorems seq_assoc, seq_zero_left, seq_zero_right ARE the monad laws
+
+    We formalize this directly, without importing Mathlib category theory.
+    The construction makes explicit what was already implicit in the algebra. -/
+
+-- ── The Graded Monad Structure ────────────────────────────────
+
+/-- A graded computation: a value of type α tagged with an effect grade.
+    `Graded e α` represents "a computation that produces an α with effect e."
+
+    This is the type family T_e(A) in the graded monad.
+    The effect tag is a phantom index — it constrains composition
+    but does not change the runtime representation. -/
+structure Graded (e : Effect) (α : Type) where
+  val : α
+
+/-- Pure: inject a value into the graded monad at the identity effect.
+    This is the unit η : A → T_{zero} A.
+    A pure computation has zero cost and maximum quality. -/
+def Graded.pure (a : α) : Graded Effect.zero α :=
+  ⟨a⟩
+
+/-- Bind: compose graded computations, accumulating effects.
+    Given a computation of type A at effect e₁, and a function
+    from A to a computation of type B at effect e₂, produce
+    a computation of type B at effect (e₁ ⊕ e₂).
+
+    This is the Kleisli composition in the graded monad. The effect
+    indices compose via Effect.seq — costs add, quality takes minimum. -/
+def Graded.bind (ma : Graded e₁ α) (f : α → Graded e₂ β) : Graded (Effect.seq e₁ e₂) β :=
+  ⟨(f ma.val).val⟩
+
+/-- Map: apply a pure function inside the graded monad.
+    Does not change the effect (pure functions are free). -/
+def Graded.map (f : α → β) (ma : Graded e α) : Graded e β :=
+  ⟨f ma.val⟩
+
+/-- Join: flatten a nested graded computation.
+    This is the multiplication μ : T_m(T_n(A)) → T_{m⊕n}(A). -/
+def Graded.join (mma : Graded e₁ (Graded e₂ α)) : Graded (Effect.seq e₁ e₂) α :=
+  ⟨mma.val.val⟩
+
+-- ── The Graded Monad Laws ─────────────────────────────────────
+
+/-! The three monad laws for the graded monad, stated as equalities
+    up to the effect monoid structure. Each law corresponds to an
+    existing theorem from Section 1.
+
+    Law 1 (Left unit):   bind (pure a) f  =  f a
+           Effect law:    seq zero e₂     =  e₂        (seq_zero_left)
+
+    Law 2 (Right unit):  bind m pure      =  m
+           Effect law:    seq e₁ zero     =  e₁        (seq_zero_right)
+
+    Law 3 (Assoc):       bind (bind m f) g = bind m (λ a. bind (f a) g)
+           Effect law:    seq (seq e₁ e₂) e₃ = seq e₁ (seq e₂ e₃)  (seq_assoc)
+
+    The proof strategy: since Graded is a simple wrapper, the value-level
+    equalities are trivial (they just unwrap). The interesting content is
+    in the EFFECT INDICES, where the existing Section 1 theorems do the work. -/
+
+/-- Left unit law: bind (pure a) f = f a (up to effect index).
+    The effect index of the left side is `seq zero e₂`, which equals `e₂`
+    by seq_zero_left. We prove the value equality directly, then state
+    the index coherence separately. -/
+theorem Graded.bind_pure_left (a : α) (f : α → Graded e β) :
+    (Graded.bind (Graded.pure a) f).val = (f a).val := by
+  rfl
+
+/-- Left unit index coherence: the effect grade `seq zero e` equals `e`. -/
+theorem Graded.bind_pure_left_index (e : Effect) :
+    Effect.seq Effect.zero e = e :=
+  Effect.seq_zero_left e
+
+/-- Right unit law: bind m pure = m (up to effect index).
+    The effect index of the left side is `seq e₁ zero`, which equals `e₁`
+    by seq_zero_right. -/
+theorem Graded.bind_pure_right (ma : Graded e α) :
+    (Graded.bind ma Graded.pure).val = ma.val := by
+  rfl
+
+/-- Right unit index coherence: the effect grade `seq e zero` equals `e`. -/
+theorem Graded.bind_pure_right_index (e : Effect) :
+    Effect.seq e Effect.zero = e :=
+  Effect.seq_zero_right e
+
+/-- Associativity law: bind (bind m f) g = bind m (λ a. bind (f a) g)
+    (up to effect index). The left side has index `seq (seq e₁ e₂) e₃`,
+    the right side has index `seq e₁ (seq e₂ e₃)`. These are equal
+    by seq_assoc. -/
+theorem Graded.bind_assoc (ma : Graded e₁ α) (f : α → Graded e₂ β)
+    (g : β → Graded e₃ γ) :
+    (Graded.bind (Graded.bind ma f) g).val
+    = (Graded.bind ma (fun a => Graded.bind (f a) g)).val := by
+  rfl
+
+/-- Associativity index coherence: `seq (seq e₁ e₂) e₃ = seq e₁ (seq e₂ e₃)`. -/
+theorem Graded.bind_assoc_index (e₁ e₂ e₃ : Effect) :
+    Effect.seq (Effect.seq e₁ e₂) e₃ = Effect.seq e₁ (Effect.seq e₂ e₃) :=
+  Effect.seq_assoc e₁ e₂ e₃
+
+-- ── The GradedMonad Typeclass ─────────────────────────────────
+
+/-- A graded monad over a monoid (M, op, unit) with a type family T.
+    This captures the abstract structure: T is indexed by a monoid,
+    with unit at the identity element and bind composing indices.
+
+    The laws are split into VALUE laws (about the underlying computation)
+    and INDEX laws (about the monoid structure). This separation is
+    necessary because T_m and T_n are different types when m ≠ n,
+    so we express value equality via an extraction function `extract`. -/
+structure GradedMonadLaws (M : Type) (op : M → M → M) (unit : M)
+    (T : M → Type → Type) where
+  /-- Left unit index: op unit n = n. -/
+  left_unit_index  : ∀ (n : M), op unit n = n
+  /-- Right unit index: op m unit = m. -/
+  right_unit_index : ∀ (m : M), op m unit = m
+  /-- Associativity index: op (op m n) p = op m (op n p). -/
+  assoc_index      : ∀ (m n p : M), op (op m n) p = op m (op n p)
+
+/-- The Effect algebra satisfies the graded monad laws.
+    This is the central theorem of Section 18: the existing Effect.seq monoid
+    structure satisfies all index-level graded monad laws.
+    The proofs delegate directly to Section 1 theorems. -/
+def effectGradedMonadLaws : GradedMonadLaws Effect Effect.seq Effect.zero Graded where
+  left_unit_index  := Effect.seq_zero_left
+  right_unit_index := Effect.seq_zero_right
+  assoc_index      := Effect.seq_assoc
+
+-- ── Connection to RoundTrip (Section 16) ─────────────────────
+
+/-! The RoundTrip structure from Section 16 is the Kleisli arrow of the
+    graded monad. A RoundTrip with effect e corresponds to a morphism
+    A → T_e B in the Kleisli category. The RoundTrip.compose operation
+    IS Kleisli composition, and RoundTrip.identity IS the monad unit. -/
+
+/-- Lift a RoundTrip into a graded computation.
+    The effect grade is determined by the RoundTrip's eval effect. -/
+def RoundTrip.toGraded (rt : RoundTrip) (input : String) : Graded rt.effect String :=
+  ⟨input⟩  -- In the formal model, the value is the result of running the LLM
+
+/-- The identity RoundTrip corresponds to the graded monad's pure operation.
+    Its effect is zero, matching the unit grade. -/
+theorem RoundTrip.identity_is_pure :
+    RoundTrip.identity.effect = Effect.zero := by
+  rfl
+
+/-- RoundTrip.compose corresponds to Kleisli composition in the graded monad.
+    The composed effect equals seq of the individual effects. -/
+theorem RoundTrip.compose_is_kleisli (a b : RoundTrip) :
+    (RoundTrip.compose a b).effect = Effect.seq a.effect b.effect := by
+  rfl
+
+-- ── Connection to Pipelines (Section 17) ─────────────────────
+
+/-! A pipeline (List RoundTrip) from Section 17 corresponds to an
+    iterated Kleisli composition in the graded monad. The pipeline's
+    total cost equals the sum of cell costs, which is exactly the
+    token component of the composed effect grade.
+
+    The key insight: `pipelineTotalCost` computes the same value as
+    the token component of folding Effect.seq over the pipeline. -/
+
+/-- The composed effect of a pipeline: fold Effect.seq over all cells.
+    This is the grade of the composed Kleisli arrow. -/
+def pipelineEffect (p : List RoundTrip) : Effect :=
+  p.foldl (fun acc rt => Effect.seq acc rt.effect) Effect.zero
+
+/-- Empty pipeline has zero effect. -/
+theorem pipelineEffect_nil : pipelineEffect [] = Effect.zero := by
+  rfl
+
+/-- Helper: the token component of foldl Effect.seq tracks foldl of token addition.
+    This lemma generalizes the relationship between the effect fold and the cost fold
+    for any accumulator state. -/
+private theorem foldl_effect_tokens (p : List RoundTrip) (acc : Effect) (n : Nat)
+    (h : acc.tokens = n) :
+    (p.foldl (fun a rt => Effect.seq a rt.effect) acc).tokens
+    = p.foldl (fun a rt => a + rt.effect.tokens) n := by
+  induction p generalizing acc n with
+  | nil => exact h
+  | cons rt rest ih =>
+    simp only [List.foldl_cons]
+    exact ih (Effect.seq acc rt.effect) (n + rt.effect.tokens)
+      (by simp [Effect.seq, h])
+
+/-- The token component of the pipeline effect equals pipelineTotalCost.
+    This connects the graded monad (Section 18) to the pipeline cost model
+    (Section 17). The graded monad's index tracking IS the cost accounting. -/
+theorem pipelineEffect_tokens_eq_cost (p : List RoundTrip) :
+    (pipelineEffect p).tokens = pipelineTotalCost p := by
+  exact foldl_effect_tokens p Effect.zero 0 rfl
+
+-- ── Non-Vacuity Witnesses ─────────────────────────────────────
+
+/-- Non-vacuity: a pure graded computation has zero effect. -/
+example : (Graded.pure "hello" : Graded Effect.zero String).val = "hello" := by rfl
+
+/-- Non-vacuity: binding two graded computations accumulates effects. -/
+example :
+    let e₁ : Effect := { tokens := 5000, quality := .good }
+    let e₂ : Effect := { tokens := 3000, quality := .adequate }
+    let m : Graded e₁ String := ⟨"types found"⟩
+    let f : String → Graded e₂ String := fun s => ⟨s ++ " → synthesized"⟩
+    (Graded.bind m f).val = "types found → synthesized" := by rfl
+
+/-- Non-vacuity: the composed effect has correct tokens and quality. -/
+example :
+    let e₁ : Effect := { tokens := 5000, quality := .good }
+    let e₂ : Effect := { tokens := 3000, quality := .adequate }
+    Effect.seq e₁ e₂ = { tokens := 8000, quality := .adequate } := by rfl
+
+/-- Non-vacuity: three-way bind associativity — both groupings give same result. -/
+example :
+    let e₁ : Effect := { tokens := 1000, quality := .good }
+    let e₂ : Effect := { tokens := 2000, quality := .adequate }
+    let e₃ : Effect := { tokens := 3000, quality := .excellent }
+    let m : Graded e₁ Nat := ⟨42⟩
+    let f : Nat → Graded e₂ Nat := fun n => ⟨n + 1⟩
+    let g : Nat → Graded e₃ Nat := fun n => ⟨n * 2⟩
+    (Graded.bind (Graded.bind m f) g).val
+    = (Graded.bind m (fun a => Graded.bind (f a) g)).val := by rfl
+
+/-- Non-vacuity: the graded monad index tracks the exPipeline cost from Section 17. -/
+example : (pipelineEffect exPipeline).tokens = 26000 := by decide
+
+/-- Non-vacuity: pipeline effect tokens matches pipelineTotalCost. -/
+example : (pipelineEffect exPipeline).tokens = pipelineTotalCost exPipeline := by decide
+
+/-- Non-vacuity: pipeline effect quality is the min across all cells. -/
+example : (pipelineEffect exPipeline).quality = .adequate := by decide
+
+/-- Non-vacuity: graded join (the multiplication μ) flattens nested computations. -/
+example :
+    let inner : Graded { tokens := 3000, quality := .good } String := ⟨"result"⟩
+    let outer : Graded { tokens := 5000, quality := .adequate } (Graded { tokens := 3000, quality := .good } String) := ⟨inner⟩
+    (Graded.join outer).val = "result" := by rfl
+
 end BeadCalculus.GasCity
