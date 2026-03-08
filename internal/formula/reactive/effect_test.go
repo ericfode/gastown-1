@@ -55,43 +55,40 @@ func TestEffectParLeSeq(t *testing.T) {
 	}
 }
 
-func TestDistortionSeq(t *testing.T) {
-	a := Distortion{Retention: 60, Sensitivity: 2}
-	b := Distortion{Retention: 20, Sensitivity: 1}
+func TestFidelityLosslessIsTop(t *testing.T) {
+	top := Lossless()
+	other := Fidelity(5)
+	if !other.Le(top) {
+		t.Error("non-top should be ≤ Lossless")
+	}
+	if !top.Le(top) {
+		t.Error("Lossless should be ≤ itself (reflexive)")
+	}
+}
+
+func TestFidelitySeqDPI(t *testing.T) {
+	a := Fidelity(2)
+	b := Fidelity(5)
 	got := a.Seq(b)
-
-	if got.Retention != 12 {
-		t.Errorf("retention = %d, want 12 (60*20/100)", got.Retention)
-	}
-	if got.Sensitivity != 2 {
-		t.Errorf("sensitivity = %d, want 2", got.Sensitivity)
+	if !got.Le(a) {
+		t.Errorf("Seq(%d, %d) = %d, should be ≤ %d (DPI)", a, b, got, a)
 	}
 }
 
-func TestDistortionPar(t *testing.T) {
-	a := Distortion{Retention: 60, Sensitivity: 2}
-	b := Distortion{Retention: 80, Sensitivity: 1}
+func TestFidelityParBestPath(t *testing.T) {
+	a := Fidelity(5)
+	b := Fidelity(2)
 	got := a.Par(b)
-
-	if got.Retention != 80 {
-		t.Errorf("retention = %d, want 80 (max)", got.Retention)
-	}
-	if got.Sensitivity != 2 {
-		t.Errorf("sensitivity = %d, want 2 (max)", got.Sensitivity)
+	if !a.Le(got) {
+		t.Errorf("Par(%d, %d) = %d, %d should be ≤ result (best-path)", a, b, got, a)
 	}
 }
 
-func TestPipelineRetention(t *testing.T) {
-	// 80% * 60% * 70% * 20% = 6.72% ≈ 6% (integer truncation)
-	distortions := []Distortion{
-		{Retention: 80, Sensitivity: 1},
-		{Retention: 60, Sensitivity: 2},
-		{Retention: 70, Sensitivity: 1},
-		{Retention: 20, Sensitivity: 1},
-	}
-	got := PipelineRetention(distortions)
-	if got != 6 {
-		t.Errorf("retention = %d, want 6", got)
+func TestFidelitySeqLosslessIdentity(t *testing.T) {
+	top := Lossless()
+	a := Fidelity(3)
+	if top.Seq(a) != a {
+		t.Errorf("Lossless.Seq(a) = %d, want %d", top.Seq(a), a)
 	}
 }
 
@@ -105,30 +102,5 @@ func TestPipelineCost(t *testing.T) {
 	got := PipelineCost(effects)
 	if got != 26000 {
 		t.Errorf("cost = %d, want 26000", got)
-	}
-}
-
-func TestFullEffectSeq(t *testing.T) {
-	a := FullEffect{
-		Cost:       Effect{Tokens: 5000, Quality: QualityGood},
-		Distortion: Distortion{Retention: 60, Sensitivity: 1},
-	}
-	b := FullEffect{
-		Cost:       Effect{Tokens: 12000, Quality: QualityExcellent},
-		Distortion: Distortion{Retention: 80, Sensitivity: 2},
-	}
-	got := a.Seq(b)
-
-	if got.Cost.Tokens != 17000 {
-		t.Errorf("cost.tokens = %d, want 17000", got.Cost.Tokens)
-	}
-	if got.Cost.Quality != QualityGood {
-		t.Errorf("cost.quality = %s, want good", got.Cost.Quality)
-	}
-	if got.Distortion.Retention != 48 {
-		t.Errorf("distortion.retention = %d, want 48", got.Distortion.Retention)
-	}
-	if got.Distortion.Sensitivity != 2 {
-		t.Errorf("distortion.sensitivity = %d, want 2", got.Distortion.Sensitivity)
 	}
 }

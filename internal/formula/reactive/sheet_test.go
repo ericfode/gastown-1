@@ -394,26 +394,17 @@ func TestInputSnapshot(t *testing.T) {
 
 func TestTotalEffect(t *testing.T) {
 	cells := []Cell{
-		{Name: "extract", ExpectedEffect: &FullEffect{
-			Cost:       Effect{Tokens: 5000, Quality: QualityGood},
-			Distortion: Distortion{Retention: 60, Sensitivity: 1},
-		}},
-		{Name: "synth", ExpectedEffect: &FullEffect{
-			Cost:       Effect{Tokens: 12000, Quality: QualityExcellent},
-			Distortion: Distortion{Retention: 80, Sensitivity: 2},
-		}},
+		{Name: "extract", ObservedEffect: &Effect{Tokens: 5000, Quality: QualityGood}},
+		{Name: "synth", ObservedEffect: &Effect{Tokens: 12000, Quality: QualityExcellent}},
 	}
 	s := Init("test", cells)
 	total := s.TotalEffect()
 
-	if total.Cost.Tokens != 17000 {
-		t.Errorf("total tokens = %d, want 17000", total.Cost.Tokens)
+	if total.Tokens != 17000 {
+		t.Errorf("total tokens = %d, want 17000", total.Tokens)
 	}
-	if total.Cost.Quality != QualityGood {
-		t.Errorf("total quality = %s, want good", total.Cost.Quality)
-	}
-	if total.Distortion.Retention != 48 {
-		t.Errorf("total retention = %d, want 48", total.Distortion.Retention)
+	if total.Quality != QualityGood {
+		t.Errorf("total quality = %s, want good", total.Quality)
 	}
 }
 
