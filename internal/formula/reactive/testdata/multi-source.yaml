@@ -1,0 +1,30 @@
+# Multiple independent sources converging
+# Tests: independent ready sets, partial evaluation
+name: multi-source
+cells:
+  - name: code
+    type: text
+    prompt: "Read the source code."
+
+  - name: docs
+    type: text
+    prompt: "Read the documentation."
+
+  - name: issues
+    type: text
+    prompt: "Read the issue tracker."
+
+  - name: code-analysis
+    type: inventory
+    prompt: "Analyze code: {{code}}"
+    refs: [code]
+
+  - name: doc-analysis
+    type: inventory
+    prompt: "Analyze docs: {{docs}}"
+    refs: [docs]
+
+  - name: gap-report
+    type: synthesis
+    prompt: "Code says: {{code-analysis}}. Docs say: {{doc-analysis}}. Issues say: {{issues}}. Find gaps."
+    refs: [code-analysis, doc-analysis, issues]

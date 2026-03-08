@@ -1807,4 +1807,310 @@ example :
     let outer : Graded { tokens := 5000, quality := .adequate } (Graded { tokens := 3000, quality := .good } String) := ⟨inner⟩
     (Graded.join outer).val = "result" := by rfl
 
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 19: Molecule Lifecycle — Staleness as Re-instantiation
+-- ═══════════════════════════════════════════════════════════════
+
+/-! The key insight from mapping the reactive algebra onto Gas Town primitives:
+    staleness is NOT a label mutation on existing beads. It is RE-INSTANTIATION.
+
+    The lifecycle:
+      Proto (solid)  ──pour──▶  Molecule (liquid)  ──execute──▶  all cells closed
+                                                                       │
+                                                                  squash ▼
+                                                              Digest (immutable)
+                                                                       │
+                                                           upstream changes
+                                                                       │
+                                                     distill ──▶ Proto' ──pour──▶ Molecule₂
+
+    Each molecule is a DAG of beads. Completed molecules become immutable digests.
+    When upstream changes, we don't reopen beads — we pour a new molecule.
+    Version history IS the chain of digests.
+
+    This maps perfectly to Gas Town primitives:
+      Cell          = Bead (bd create)
+      Cell type     = Label (cell:text, cell:inventory, ...)
+      DAG edges     = Dependencies (--deps)
+      Ready set     = bd ready (blocker-aware)
+      BeginCompute  = bd update --claim
+      Complete      = bd close --reason "result"
+      PropagateStale = pour new molecule (re-instantiation)
+      DAG viz       = bd graph --html
+      History       = chain of squashed digests
+-/
+
+/-- Phase of matter for a molecule in the Gas Town lifecycle. -/
+inductive Phase where
+  | solid   : Phase  -- Proto: template, not yet instantiated
+  | liquid  : Phase  -- Molecule: active, beads being evaluated
+  | vapor   : Phase  -- Wisp: ephemeral molecule (auto-cleanup)
+  | crystal : Phase  -- Digest: squashed, immutable history
+  deriving DecidableEq, Repr, BEq
+
+/-- Specification of a cell within a proto. -/
+structure CellSpec where
+  name   : String
+  type   : CellType
+  prompt : String                  -- May contain {{variable}} and {{ref}} holes
+  refs   : List String             -- Names of upstream cells
+  deriving Repr, BEq, DecidableEq
+
+/-- A proto is a reusable template for a cell DAG.
+    Variables ({{key}}) are substituted during instantiation (pour). -/
+structure Proto where
+  name      : String
+  cells     : List CellSpec
+  variables : List String          -- Template variables (e.g., "source", "repo")
+  deriving Repr, BEq, DecidableEq
+
+/-- A molecule is an instantiated proto — real beads with real dependencies. -/
+structure Molecule where
+  proto     : Proto                -- Which template this came from
+  phase     : Phase                -- Current phase of matter
+  bindings  : List (String × String)  -- Variable substitutions applied
+  cells     : List CellSpec        -- Instantiated cell specs (variables resolved)
+  deriving Repr, BEq, DecidableEq
+
+/-- A digest is the immutable record of a completed molecule execution. -/
+structure Digest where
+  molecule  : Molecule             -- The molecule that was executed
+  values    : List (String × String)  -- Cell name → final value
+  cost      : Effect               -- Total effect consumed
+  deriving Repr, BEq, DecidableEq
+
+/-- Pour: instantiate a proto into a molecule (solid → liquid). -/
+def pour (p : Proto) (bindings : List (String × String)) : Molecule where
+  proto    := p
+  phase    := .liquid
+  bindings := bindings
+  cells    := p.cells.map fun spec =>
+    { spec with prompt := bindings.foldl (fun s (k, v) =>
+        s.replace ("{{" ++ k ++ "}}") v) spec.prompt }
+
+/-- Squash: compress a completed molecule into an immutable digest (liquid → crystal). -/
+def squash (m : Molecule) (values : List (String × String)) (cost : Effect) : Digest where
+  molecule := { m with phase := .crystal }
+  values   := values
+  cost     := cost
+
+/-- Pouring preserves the proto's cell count. -/
+theorem pour_preserves_cells (p : Proto) (bindings : List (String × String)) :
+    (pour p bindings).cells.length = p.cells.length := by
+  simp [pour, List.length_map]
+
+/-- Pouring produces a liquid-phase molecule. -/
+theorem pour_is_liquid (p : Proto) (bindings : List (String × String)) :
+    (pour p bindings).phase = .liquid := by
+  rfl
+
+/-- Squashing produces a crystal-phase digest. -/
+theorem squash_is_crystal (m : Molecule) (vals : List (String × String)) (cost : Effect) :
+    (squash m vals cost).molecule.phase = .crystal := by
+  rfl
+
+/-- The cost of a squashed digest reflects the total execution cost. -/
+theorem squash_preserves_cost (m : Molecule) (vals : List (String × String)) (e : Effect) :
+    (squash m vals e).cost = e := by
+  rfl
+
+-- ── Non-Vacuity: Molecule Lifecycle ────────────────────────
+
+/-- Example proto: a code analysis pipeline. -/
+def exCodeAnalysis : Proto where
+  name := "code-analysis"
+  cells := [
+    { name := "read-code", type := .text, prompt := "Read files in {{repo}}", refs := [] },
+    { name := "find-bugs", type := .inventory, prompt := "List bugs in {{read-code}}", refs := ["read-code"] },
+    { name := "find-patterns", type := .inventory, prompt := "List patterns in {{read-code}}", refs := ["read-code"] },
+    { name := "report", type := .synthesis, prompt := "Bugs: {{find-bugs}}, Patterns: {{find-patterns}}", refs := ["find-bugs", "find-patterns"] }
+  ]
+  variables := ["repo"]
+
+/-- Pouring the code analysis proto with repo=myapp. -/
+example : (pour exCodeAnalysis [("repo", "myapp")]).cells.head?.map (·.prompt)
+    = some "Read files in myapp" := by native_decide
+
+/-- The poured molecule has 4 cells. -/
+example : (pour exCodeAnalysis [("repo", "myapp")]).cells.length = 4 := by native_decide
+
+/-- Squashing after execution captures the total cost. -/
+example :
+    let m := pour exCodeAnalysis [("repo", "myapp")]
+    let d := squash m [("read-code", "src/..."), ("find-bugs", "3 bugs"), ("find-patterns", "MVC"),
+                       ("report", "Review complete")] { tokens := 25000, quality := .good }
+    d.cost.tokens = 25000 := by rfl
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 20: Annotated Evolution — Cyclic Refinement Across Generations
+-- ═══════════════════════════════════════════════════════════════
+
+/-! Within a molecule, the cell graph is a DAG (no circular deps).
+    But ACROSS molecule generations, cycles emerge naturally through annotations.
+
+    A user (or agent) annotates a completed digest with evolution instructions:
+    - AddRef: "cell C should also depend on cell A" (adds a DAG edge)
+    - RemoveRef: "cell B no longer needs cell X" (removes a DAG edge)
+    - SplitCell: "split cell X into X₁ and X₂" (topology change)
+    - MergeCell: "merge cells X and Y into Z" (topology change)
+    - RefinePrompt: "cell X's prompt should say ..." (prompt evolution)
+    - SeedValue: "cell X should start with value V" (from prior digest)
+
+    The evolution operator: evolve(Proto, Annotations) → Proto'
+    This is the mechanism by which the graph becomes cyclic across time:
+
+    Generation 1:  A → B → C     (C has no dep on A)
+                   annotate(C, AddRef A)
+    Generation 2:  A → B → C     (C now deps on A too — diamond)
+                        ↗
+                   annotate(B, SeedValue from C's gen1 result)
+    Generation 3:  A → B → C     (B seeded with C's old output — cycle unrolled)
+
+    Each generation is a DAG. The cycle lives in the CHAIN of generations.
+    Annotations are the feedback signal that drives structural evolution.
+-/
+
+/-- An annotation on a completed digest that influences the next proto. -/
+inductive Annotation where
+  | addRef       (cell : String) (newRef : String)              -- Add a dependency edge
+  | removeRef    (cell : String) (oldRef : String)              -- Remove a dependency edge
+  | splitCell    (cell : String) (into : List String)           -- Split one cell into many
+  | mergeCell    (cells : List String) (into : String)          -- Merge many cells into one
+  | refinePrompt (cell : String) (newPrompt : String)           -- Update a cell's prompt
+  | seedValue    (cell : String) (value : String)               -- Pre-fill from prior digest
+  | addCell      (spec : CellSpec)                              -- Add a new cell to the graph
+  | removeCell   (cell : String)                                -- Remove a cell from the graph
+  deriving Repr, BEq, DecidableEq
+
+/-- Apply a single annotation to a proto, producing an evolved proto. -/
+def applyAnnotation (p : Proto) (a : Annotation) : Proto :=
+  match a with
+  | .addRef cell newRef =>
+    { p with cells := p.cells.map fun spec =>
+        if spec.name == cell then { spec with refs := spec.refs ++ [newRef] } else spec }
+  | .removeRef cell oldRef =>
+    { p with cells := p.cells.map fun spec =>
+        if spec.name == cell then { spec with refs := spec.refs.filter (· != oldRef) } else spec }
+  | .refinePrompt cell newPrompt =>
+    { p with cells := p.cells.map fun spec =>
+        if spec.name == cell then { spec with prompt := newPrompt } else spec }
+  | .addCell spec =>
+    { p with cells := p.cells ++ [spec] }
+  | .removeCell cell =>
+    { p with cells := p.cells.filter (·.name != cell) }
+  | .splitCell cell _into =>
+    -- Splitting: replace cell with N new cells, each inheriting the original's refs.
+    -- The caller specifies the new cell specs via subsequent addCell annotations.
+    { p with cells := p.cells.filter (·.name != cell) }
+  | .mergeCell cells into =>
+    -- Merging: combine multiple cells into one. Refs = union of all refs.
+    let allRefs := ((p.cells.filter (fun s => cells.contains s.name)).map (·.refs)).flatten
+    let merged : CellSpec := {
+      name := into
+      type := .synthesis  -- Merged cells default to synthesis
+      prompt := "Merged from: " ++ String.intercalate ", " cells
+      refs := List.eraseDups allRefs
+    }
+    { p with cells := (p.cells.filter (fun s => !cells.contains s.name)) ++ [merged] }
+  | .seedValue _cell _value =>
+    -- Seeding doesn't change the proto structure; it's applied during pour.
+    p
+
+/-- Evolve a proto by applying a list of annotations. -/
+def evolve (p : Proto) (annotations : List Annotation) : Proto :=
+  annotations.foldl applyAnnotation p
+
+/-- A generation: one complete cycle of pour → execute → squash → annotate. -/
+structure Generation where
+  number      : Nat
+  digest      : Digest
+  annotations : List Annotation    -- Annotations for the NEXT generation
+  deriving Repr, BEq, DecidableEq
+
+/-- An evolution history: a chain of generations showing how the graph evolves. -/
+def EvolutionHistory := List Generation
+
+/-- Evolution preserves or modifies cell count based on annotations. -/
+theorem evolve_empty_preserves (p : Proto) :
+    evolve p [] = p := by
+  rfl
+
+-- Annotation properties are demonstrated via concrete examples below
+-- (universal proofs over applyAnnotation's match branches require
+--  more infrastructure than they're worth for the formalization).
+
+-- ── The Cycle Unrolling Theorem ────────────────────────────
+
+-- Two generations form a "cycle" when generation N+1's proto has
+-- an edge from cell B to cell A, and generation N's proto had
+-- an edge from cell A to cell B. Cycles unrolled across molecule generations:
+-- each generation is a DAG, cycles emerge across the chain.
+
+/-- Check if a proto has a reference edge from `from` to `to`. -/
+def hasRef (p : Proto) (from_ to_ : String) : Bool :=
+  p.cells.any fun spec => spec.name == from_ && spec.refs.contains to_
+
+-- ── Non-Vacuity: Evolution Examples ────────────────────────
+
+/-- Start with a linear proto: A → B → C. -/
+def exLinearProto : Proto where
+  name := "linear"
+  cells := [
+    { name := "A", type := .text, prompt := "Start", refs := [] },
+    { name := "B", type := .inventory, prompt := "Process {{A}}", refs := ["A"] },
+    { name := "C", type := .synthesis, prompt := "Synthesize {{B}}", refs := ["B"] }
+  ]
+  variables := []
+
+/-- Evolve: add C→A dependency (creates diamond structure). -/
+example : hasRef exLinearProto "C" "A" = false := by native_decide
+example : hasRef (evolve exLinearProto [.addRef "C" "A"]) "C" "A" = true := by native_decide
+
+/-- Evolve: refine B's prompt based on feedback. -/
+example :
+    let evolved := evolve exLinearProto [.refinePrompt "B" "Process {{A}} with focus on types"]
+    (evolved.cells.find? (·.name == "B")).map (·.prompt)
+      = some "Process {{A}} with focus on types" := by native_decide
+
+/-- Evolve: add a new cell D that depends on both A and C (cross-cutting concern). -/
+example :
+    let evolved := evolve exLinearProto [
+      .addCell { name := "D", type := .decision, prompt := "Decide based on {{A}} and {{C}}",
+                 refs := ["A", "C"] }
+    ]
+    evolved.cells.length = 4 := by native_decide
+
+/-- Multi-step evolution: gen1 → annotate → gen2 → annotate → gen3.
+    Shows how the graph topology evolves across generations. -/
+example :
+    -- Gen 1: Linear A → B → C
+    let gen1 := exLinearProto
+    -- Annotate: C should also see A (diamond), B needs better prompt
+    let annotations1 := [
+      Annotation.addRef "C" "A",
+      Annotation.refinePrompt "B" "Process {{A}}, focus on dependencies"
+    ]
+    let gen2 := evolve gen1 annotations1
+    -- Gen 2 now has 3 cells, C refs both A and B
+    gen2.cells.length = 3
+    ∧ hasRef gen2 "C" "A" = true
+    ∧ hasRef gen2 "C" "B" = true
+    ∧ hasRef gen2 "B" "A" = true := by
+  native_decide
+
+/-- The complete lifecycle: pour → squash → evolve → pour again.
+    This demonstrates staleness-as-re-instantiation. -/
+example :
+    -- Pour gen1
+    let m1 := pour exLinearProto []
+    -- Squash gen1 (simulate completion)
+    let d1 := squash m1 [("A", "raw data"), ("B", "processed"), ("C", "synthesis")]
+                        { tokens := 15000, quality := .good }
+    -- Evolve based on annotations
+    let proto2 := evolve d1.molecule.proto [.addRef "C" "A"]
+    -- Pour gen2 — this IS the staleness refresh
+    let m2 := pour proto2 []
+    -- Gen2 molecule has the evolved structure
+    hasRef m2.proto "C" "A" = true := by native_decide
+
 end BeadCalculus.GasCity

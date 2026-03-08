@@ -70,8 +70,9 @@ func init() {
 
 // loadSheet reads a YAML sheet definition and returns a Sheet.
 func loadSheet(path string) (*reactive.Sheet, error) {
-	// Resolve relative to workspace root if not absolute.
-	if !filepath.IsAbs(path) {
+	// Try the path as-is first (relative to CWD or absolute).
+	if _, err := os.Stat(path); err != nil && !filepath.IsAbs(path) {
+		// Fall back to workspace root.
 		if root, err := workspace.FindFromCwd(); err == nil {
 			candidate := filepath.Join(root, path)
 			if _, err := os.Stat(candidate); err == nil {
