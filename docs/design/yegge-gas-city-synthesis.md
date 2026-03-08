@@ -313,8 +313,9 @@ Lean is the type theory; the formula language is the user-facing syntax.
 Yegge's "code size is the enemy" + the information-theoretic analysis =
 the insight that multi-agent systems are compression pipelines. Each agent
 is a lossy codec. The effect algebra tracks the cost and quality of
-compression. The distortion algebra (proposed but unbuilt) tracks
-information loss. Together, they make the invisible visible.
+compression. The abstract fidelity preorder captures information
+preservation ordering (monotone decrease under sequential composition,
+monotone increase under parallel). Together, they make the invisible visible.
 
 **4. Liberal base, conservative accent.**
 
