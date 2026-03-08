@@ -80,7 +80,7 @@ type Cell struct {
 	Refs     []Ref    // Explicit upstream dependencies.
 
 	// Effect tracking (Gas City Sections 1, 14).
-	ObservedEffect *FullEffect // Measured cost and distortion from last evaluation. Nil = not yet evaluated.
+	ObservedEffect *Effect // Measured cost and distortion from last evaluation. Nil = not yet evaluated.
 }
 
 // Value holds the computed content of a cell.
@@ -122,7 +122,7 @@ type cellEntry struct {
 	LastError error  // Non-nil only in failed state.
 
 	// Observed effect from the last evaluation.
-	ObservedEffect *FullEffect
+	ObservedEffect *Effect
 
 	// Input snapshot: which upstream versions were consumed.
 	InputSnapshot map[string]int // cell name -> version consumed.

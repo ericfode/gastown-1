@@ -218,17 +218,12 @@ func (s *Sheet) GetInputSnapshot(cellName string) map[string]int {
 }
 
 // TotalEffect computes the total effect for the sheet by summing all cells
-// with known expected effects. Returns cost total and end-to-end distortion.
-func (s *Sheet) TotalEffect() FullEffect {
-	total := FullEffect{
-		Cost:       EffectZero(),
-		Distortion: PerfectDistortion(),
-	}
-
+// with observed effects. Returns the sequentially composed cost.
+func (s *Sheet) TotalEffect() Effect {
+	total := EffectZero()
 	for _, c := range s.cells {
-		if c.ExpectedEffect != nil {
-			total.Cost = total.Cost.Seq(c.ExpectedEffect.Cost)
-			total.Distortion = total.Distortion.Seq(c.ExpectedEffect.Distortion)
+		if c.ObservedEffect != nil {
+			total = total.Seq(*c.ObservedEffect)
 		}
 	}
 	return total

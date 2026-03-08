@@ -77,60 +77,39 @@ func (e Effect) Par(other Effect) Effect {
 	}
 }
 
-// Distortion tracks information fidelity through the pipeline.
-// Maps to GasCity.lean Section 14.
-type Distortion struct {
-	Retention   int `json:"retention" yaml:"retention"`     // 0-100: percentage of information preserved.
-	Sensitivity int `json:"sensitivity" yaml:"sensitivity"` // Amplification factor (1 = no amplification).
-}
+// Fidelity represents information fidelity as an abstract preorder.
+// Maps to GasCity.lean Section 14 (refactored).
+//
+// Laws:
+//   - Preorder: Le is reflexive and transitive.
+//   - Data Processing Inequality: Seq(a, b).Le(a) — sequential composition cannot increase fidelity.
+//   - Best-path: a.Le(Par(a, b)) — parallel composition cannot decrease fidelity.
+//   - Lossless is the top element.
+type Fidelity int
 
-// PerfectDistortion returns 100% retention, no amplification.
-func PerfectDistortion() Distortion {
-	return Distortion{Retention: 100, Sensitivity: 1}
-}
+// Lossless returns the top element: no information loss.
+func Lossless() Fidelity { return Fidelity(0) }
 
-// Seq composes distortions sequentially: retentions MULTIPLY, sensitivities MULTIPLY.
-func (d Distortion) Seq(other Distortion) Distortion {
-	return Distortion{
-		Retention:   d.Retention * other.Retention / 100,
-		Sensitivity: d.Sensitivity * other.Sensitivity,
+// Le returns true if f ≤ other in the fidelity preorder.
+// Lower underlying value = higher fidelity (Lossless is 0).
+func (f Fidelity) Le(other Fidelity) bool { return f >= other }
+
+// Seq composes fidelity sequentially. Monotone decreasing: Seq(a, b) ≤ a.
+// Returns the worse (higher-valued) of the two.
+func (f Fidelity) Seq(other Fidelity) Fidelity {
+	if other > f {
+		return other
 	}
+	return f
 }
 
-// Par composes distortions in parallel: take BEST retention, WORST sensitivity.
-func (d Distortion) Par(other Distortion) Distortion {
-	ret := d.Retention
-	if other.Retention > ret {
-		ret = other.Retention
+// Par composes fidelity in parallel. Monotone increasing: a ≤ Par(a, b).
+// Returns the better (lower-valued) of the two.
+func (f Fidelity) Par(other Fidelity) Fidelity {
+	if other < f {
+		return other
 	}
-	sens := d.Sensitivity
-	if other.Sensitivity > sens {
-		sens = other.Sensitivity
-	}
-	return Distortion{Retention: ret, Sensitivity: sens}
-}
-
-// FullEffect combines cost accounting with distortion tracking.
-// Maps to GasCity.lean Section 14: FullCellEffect.
-type FullEffect struct {
-	Cost       Effect     `json:"cost" yaml:"cost"`
-	Distortion Distortion `json:"distortion" yaml:"distortion"`
-}
-
-// Seq composes full effects sequentially.
-func (fe FullEffect) Seq(other FullEffect) FullEffect {
-	return FullEffect{
-		Cost:       fe.Cost.Seq(other.Cost),
-		Distortion: fe.Distortion.Seq(other.Distortion),
-	}
-}
-
-// Par composes full effects in parallel.
-func (fe FullEffect) Par(other FullEffect) FullEffect {
-	return FullEffect{
-		Cost:       fe.Cost.Par(other.Cost),
-		Distortion: fe.Distortion.Par(other.Distortion),
-	}
+	return f
 }
 
 // PipelineCost computes total cost for a sequence of effects.
@@ -140,16 +119,4 @@ func PipelineCost(effects []Effect) int {
 		total += e.Tokens
 	}
 	return total
-}
-
-// PipelineRetention computes end-to-end retention for a sequence of distortions.
-func PipelineRetention(distortions []Distortion) int {
-	if len(distortions) == 0 {
-		return 100
-	}
-	ret := distortions[0]
-	for _, d := range distortions[1:] {
-		ret = ret.Seq(d)
-	}
-	return ret.Retention
 }
