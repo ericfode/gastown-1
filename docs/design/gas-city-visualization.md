@@ -1,5 +1,100 @@
 # Gas City: Visualization & Interaction Design
 
+## How Gas City Maps to Gas Town (Zero New Infrastructure)
+
+```mermaid
+graph TB
+    subgraph "Gas City (new layer)"
+        GRID["Living Grid UI"]
+        SANKEY["Sankey View"]
+        TRACE["Provenance Trace"]
+        POLICY["Recompute Policy Engine"]
+        EVAL["gt eval / gt map"]
+    end
+
+    subgraph "Gas Town (existing)"
+        BD["bd (beads)"]
+        SLING["gt sling"]
+        POLECAT["polecats"]
+        DOLT["Dolt"]
+        FORMULA["formulas (TOML)"]
+    end
+
+    subgraph "What Changes in Gas Town"
+        STALE["+ stale:bool on beads"]
+        SNAP["+ input_snapshot on beads"]
+        CDEPTH["+ compression_depth:int"]
+        TMPL["+ prompt_template field"]
+    end
+
+    GRID --> BD
+    GRID --> DOLT
+    SANKEY --> BD
+    TRACE --> DOLT
+    POLICY --> SLING
+    EVAL --> SLING
+    EVAL --> POLECAT
+
+    BD --- STALE
+    BD --- SNAP
+    BD --- CDEPTH
+    FORMULA --- TMPL
+
+    style GRID fill:#4a9eff,color:#fff
+    style SANKEY fill:#4a9eff,color:#fff
+    style TRACE fill:#4a9eff,color:#fff
+    style POLICY fill:#ff9f43,color:#000
+    style EVAL fill:#ff9f43,color:#000
+    style STALE fill:#10ac84,color:#fff
+    style SNAP fill:#10ac84,color:#fff
+    style CDEPTH fill:#10ac84,color:#fff
+    style TMPL fill:#10ac84,color:#fff
+```
+
+**Key point:** Gas City is a LENS on Gas Town, not a replacement. The
+existing bead/formula/polecat infrastructure stays. We add 4 fields to
+beads, a template field to formulas, and build the visualization +
+policy layer on top.
+
+## Iteration Model: Bounded Loops via Convergence
+
+DAGs can't represent loops. But LLM workflows need iteration:
+draft → review → revise → review → approve. Gas City handles this
+via **bounded unrolling with convergence detection**.
+
+```mermaid
+graph LR
+    subgraph "Iteration: max 3 rounds"
+        D["draft₁"] -->|"output"| R1["review₁"]
+        R1 -->|"feedback"| REV1["revise₁"]
+        REV1 -->|"output"| R2["review₂"]
+        R2 -->|"feedback"| REV2["revise₂"]
+        REV2 -->|"output"| R3["review₃"]
+        R3 -->|"approved ✓"| FINAL["final"]
+    end
+
+    subgraph "Convergence check"
+        CC["diff(revise₁, revise₂)<br/>< threshold?"]
+    end
+
+    REV1 -.-> CC
+    REV2 -.-> CC
+    CC -.->|"converged"| FINAL
+
+    style D fill:#4a9eff,color:#fff
+    style R1 fill:#ff9f43,color:#000
+    style REV1 fill:#4a9eff,color:#fff
+    style R2 fill:#ff9f43,color:#000
+    style REV2 fill:#4a9eff,color:#fff
+    style R3 fill:#ff9f43,color:#000
+    style FINAL fill:#10ac84,color:#fff
+```
+
+The loop is unrolled into a DAG with convergence gates. Each review
+cell checks if the revision materially changed. If not → converged,
+skip remaining rounds. The `convergent(maxRounds)` recomputation
+policy enforces the bound.
+
 ## Architecture Overview
 
 ```mermaid
