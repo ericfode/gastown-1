@@ -8,18 +8,20 @@ scaling failures, and real bottlenecks.
 
 | System | Org | Model | Production Status |
 |--------|-----|-------|-------------------|
-| Devin | Cognition | Compound (planner/coder/critic) | Thousands of enterprise customers |
-| Factory Code | Factory AI | Multi-agent (planner/worker/judge) | Enterprise SaaS |
-| Cursor | Cursor Inc | Proprietary + frontier LLMs | Millions of developers |
-| Codex | OpenAI | GPT-5.3-Codex | Cloud SaaS, worktree-isolated |
-| SWE-agent | Princeton NLP | LLM-agnostic | Research → production bridge |
-| OpenHands | OpenHands | LLM-agnostic | Open-source SDK + cloud |
-| Augment Code | Augment | Multi-model | Enterprise (100K+ file repos) |
-| Claude Code | Anthropic | Claude Opus/Sonnet | $1B+ ARR, enterprise + developer |
+| [Devin](https://cognition.ai/) | Cognition | Compound (planner/coder/critic) | Thousands of enterprise customers |
+| [Factory Code](https://factory.ai) | Factory AI | Multi-agent (planner/worker/judge) | Enterprise SaaS |
+| [Cursor](https://cursor.com/) | Cursor Inc | Proprietary + frontier LLMs | Millions of developers |
+| [Codex](https://openai.com/index/introducing-the-codex-app/) | OpenAI | GPT-5.3-Codex | Cloud SaaS, worktree-isolated |
+| [SWE-agent](https://swe-agent.com/) | Princeton NLP | LLM-agnostic | Research → production bridge |
+| [OpenHands](https://docs.all-hands.dev/) | OpenHands | LLM-agnostic | Open-source SDK + cloud |
+| [Augment Code](https://www.augmentcode.com/) | Augment | Multi-model | Enterprise (100K+ file repos) |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) | Anthropic | Claude Opus/Sonnet | $1B+ ARR, enterprise + developer |
 
 ---
 
 ## 1. Architectures That Work at Scale
+
+*See also: [R1: Orchestration Frontier](r1-orchestration-frontier.md)*
 
 ### 1.1 Compound Agent Systems (Devin)
 
@@ -37,7 +39,7 @@ Devin instances run in parallel, each with its own interactive environment.
 planning, coding, and review yields higher merge rates than a single model
 doing everything.
 
-### 1.2 Role-Based Hierarchies (Cursor, Factory)
+### 1.2 Role-Based Hierarchies ([Cursor](https://cursor.com/blog/scaling-agents), [Factory](https://factory.ai))
 
 Cursor's scaling journey is the most instructive failure-to-success story:
 
@@ -74,20 +76,20 @@ Claude Code reached $1B+ ARR with this architecture, suggesting that
 over-engineering agent coordination may be premature when the base model is
 strong.
 
-### 1.4 Event-Sourced Modular SDK (OpenHands)
+### 1.4 Event-Sourced Modular SDK ([OpenHands](https://docs.all-hands.dev/))
 
 OpenHands V1 refactored from a monolithic sandbox-centric design to a modular
 SDK with clear boundaries:
 
 - **Event-sourcing pattern**: All interactions are immutable events appended to
-  a log with deterministic replay
+  a log with deterministic replay (see also [R2: Reactive Dataflow](r2-reactive-dataflow.md))
 - **Workspace abstraction**: Same agent runs locally for prototyping or remotely
   in secure containers with minimal code changes
 - **Opt-in sandboxing**: Core SDK stays lightweight; sandboxing is a separate
   package
-- **MCP integration**: Typed tool system with Model Context Protocol support
+- **MCP integration**: Typed tool system with [Model Context Protocol](https://modelcontextprotocol.io/) support (see also [R4: Tool Ecosystems](r4-tool-ecosystems.md))
 
-### 1.5 Sandbox-First Isolation (Codex)
+### 1.5 Sandbox-First Isolation ([Codex](https://openai.com/index/introducing-the-codex-app/))
 
 OpenAI Codex operates entirely within secure, isolated containers:
 
@@ -107,10 +109,10 @@ OpenAI Codex operates entirely within secure, isolated containers:
 The most consistent finding across all systems: **human code review cannot keep
 up with agent output velocity.**
 
-- PR review time increases **91%** on teams with high AI adoption (Google DORA 2025)
+- PR review time increases **91%** on teams with high AI adoption ([Google DORA 2025](https://dora.dev/research/2025/))
 - PR sizes increase **154%** with AI adoption
 - Bug rates climb **9%** with 90% AI adoption increase
-- **67.3%** of AI-generated PRs get rejected vs **15.6%** for manual code (LinearB)
+- **67.3%** of AI-generated PRs get rejected vs **15.6%** for manual code ([LinearB](https://www.coderabbit.ai/blog/state-of-ai-vs-human-code-generation-report))
 
 Amdahl's Law applies: the system moves only as fast as its slowest link. AI
 coding gains evaporate when review, testing, and release pipelines can't match
@@ -123,7 +125,7 @@ All systems struggle with ambiguous requirements:
 - Devin is "senior-level at codebase understanding but junior at execution"
 - Devin handles clear upfront scoping well but **not mid-task requirement changes**
 - Agents perform worse when given incremental instructions after starting
-- UC San Diego/Cornell study (Dec 2025): professionals retain agency in design,
+- [UC San Diego/Cornell study (Dec 2025)](https://mikemason.ca/writing/ai-coding-agents-jan-2026/): professionals retain agency in design,
   insist on quality attributes, and deploy explicit control strategies
 
 ### 2.3 High-Stakes Decisions
@@ -170,14 +172,14 @@ coordination:
 
 ### 3.3 Quality Collapse at Volume
 
-- **METR study**: Experienced developers were **19% slower** with early-2025 AI
+- **[METR study](https://metr.org/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/)**: Experienced developers were **19% slower** with early-2025 AI
   tools while **believing they were 20% faster** — a 39-percentage-point
   perception gap
 - No significant correlation between AI adoption and better outcomes at company
-  level (DORA metrics: deployment frequency, lead time, change fail rate, MTTR)
+  level ([DORA metrics](https://dora.dev/research/2025/): deployment frequency, lead time, change fail rate, MTTR)
 - Companies with heavy AI usage didn't ship faster or more reliably
 
-### 3.4 MoE Expert Imbalance (Cursor)
+### 3.4 MoE Expert Imbalance ([Cursor](https://cursor.com/blog/scaling-agents))
 
 When using Mixture of Experts models, if every token routes to the same expert,
 that expert becomes a bottleneck while others sit idle, causing high tail latency.
@@ -207,9 +209,11 @@ Partial mitigations:
 
 ### 4.2 Context Window and Codebase Understanding
 
+*See also: [R3: Agent Memory](r3-agent-memory.md)*
+
 Large codebases remain challenging:
 
-- Augment Code's context engine processes 400K-500K files across multiple repos
+- [Augment Code](https://www.augmentcode.com/)'s context engine processes 400K-500K files across multiple repos
   — purpose-built for this problem
 - Claude Code uses regex/glob search rather than embeddings, relying on model
   capability
@@ -217,7 +221,7 @@ Large codebases remain challenging:
 
 ### 4.3 Quality Assurance at Scale
 
-**32% of teams** cite quality as the top production barrier. Observability is
+**32% of teams** cite quality as the top production barrier ([LangChain State of Agent Engineering](https://www.langchain.com/state-of-agent-engineering)). Observability is
 table stakes (**89% have implemented it**), but quality assurance at agent
 output volume remains unsolved.
 
@@ -237,7 +241,7 @@ is slow. No architectural trick has eliminated this bottleneck.
 
 ## 5. Production Metrics That Matter
 
-### 5.1 Devin (18 months in production)
+### 5.1 [Devin](https://cognition.ai/blog/devin-annual-performance-review-2025) (18 months in production)
 
 - **Hundreds of thousands** of PRs merged
 - PR merge rate: **67%** (up from 34%)
@@ -261,7 +265,7 @@ is slow. No architectural trick has eliminated this bottleneck.
 - Hundreds of agents coordinating on a single codebase
 - Required complete architecture rewrite (flat → hierarchical) to achieve this
 
-### 5.4 SWE-agent Evaluation Infrastructure (AI21)
+### 5.4 [SWE-agent](https://swe-agent.com/) Evaluation Infrastructure ([AI21](https://www.ai21.com/blog/scaling-agentic-evaluation-swe-bench/))
 
 - ~500 Kubernetes pods for parallel evaluation
 - Up to **8K parallel runs**, 20 min wall time for full SWE-bench eval
@@ -270,6 +274,8 @@ is slow. No architectural trick has eliminated this bottleneck.
 ---
 
 ## 6. Implications for Gas Town
+
+*See also: [S1: Gap Analysis](s1-gap-analysis.md), [S2: Abstraction Map](s2-abstraction-map.md), [S3: Architecture Sketch](s3-architecture-sketch.md)*
 
 ### 6.1 What Gas Town Already Gets Right
 
@@ -292,7 +298,7 @@ is slow. No architectural trick has eliminated this bottleneck.
   indexing — relies on agent search capability
 - **Observability**: No structured agent telemetry beyond beads audit trail
 - **Parallel agent scaling**: Current architecture is 1 polecat = 1 worktree = 1
-  task, no multi-agent collaboration on single tasks
+  task, no multi-agent collaboration on single tasks (see [R6: Emergent Computation](r6-emergent-computation.md))
 
 ### 6.3 Key Takeaways
 

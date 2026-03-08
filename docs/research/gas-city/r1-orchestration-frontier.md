@@ -141,7 +141,7 @@ management). The framework explicitly punts on durability.
 ### 1.5 Anthropic Agent Patterns
 
 **Architecture**: Not a framework but a set of composable patterns documented
-in "Building Effective Agents" (Dec 2025). Six patterns: prompt chaining,
+in "[Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)" (Dec 2025). Six patterns: prompt chaining,
 routing, parallelization, orchestrator-workers, evaluator-optimizer, and
 autonomous agents.
 
@@ -150,8 +150,8 @@ tasks, delegates to worker LLMs, and synthesizes results. Unlike
 parallelization (pre-defined fan-out), the orchestrator determines subtasks
 at runtime based on input.
 
-**Production Implementation**: Anthropic's own multi-agent research system
-uses an orchestrator-worker pattern. Claude Code uses a hidden multi-agent
+**Production Implementation**: Anthropic's own [multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system)
+uses an orchestrator-worker pattern. [Claude Code](https://paddo.dev/blog/claude-code-hidden-swarm/) uses a hidden multi-agent
 swarm with TeammateTool (launched with Opus 4.6, still experimental — no
 session resumption, no nested teams).
 
@@ -186,8 +186,8 @@ infrastructure.
 
 **AI Agent Support**: Wraps Pydantic AI agents with durable execution —
 automatic retries, result caching, task-level observability. ControlFlow
-(introduced 2025) provides structured AI workflow management. MCP server
-integration enables connecting Claude Code, Cursor, and other AI tools.
+(introduced 2025) provides structured AI workflow management. [MCP](r4-tool-ecosystems.md)
+server integration enables connecting Claude Code, Cursor, and other AI tools.
 
 **DAG Composition**: Traditional DAG-based task dependencies with decorators.
 Tasks can depend on upstream task results. No native support for cycles or
@@ -216,7 +216,7 @@ Python, TypeScript, .NET, Ruby). Activities are retryable units of external
 interaction. The platform guarantees exactly-once execution semantics even
 across failures, restarts, and deployments.
 
-**AI Agent Integration**: Official OpenAI Agents SDK integration (2025-2026).
+**AI Agent Integration**: Official [OpenAI Agents SDK integration](https://www.devopsdigest.com/temporal-integrates-with-openai) (2025-2026).
 Workflows orchestrate agents with durability, visibility, and auto-saved
 state. Temporal Nexus (GA) connects workflows across isolated namespaces.
 Multi-Region Replication with 99.99% SLA.
@@ -248,6 +248,9 @@ but in the difficulty of mapping agent concepts onto workflow primitives.
 
 ## 2. The Protocol Layer: MCP and A2A
 
+See also [R4: Tool Ecosystems and MCP Evolution](r4-tool-ecosystems.md) for
+deeper analysis of MCP's tool ecosystem.
+
 ### 2.1 Model Context Protocol (MCP)
 
 Anthropic's MCP has become the **de facto standard** for connecting AI agents
@@ -269,7 +272,7 @@ communication where both parties are autonomous. Key capabilities:
 - **UI negotiation**: Agents adapt to different client capabilities
 
 50+ technology partners at launch (Atlassian, Salesforce, SAP, etc.). Now
-housed by the Linux Foundation as an open-source project.
+[housed by the Linux Foundation](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/) as an open-source project.
 
 **Status**: MCP has wider adoption. A2A addresses a real gap (agent-to-agent
 vs agent-to-tool) but adoption lags behind MCP. The two protocols are
@@ -332,7 +335,7 @@ are core agent behaviors that require cyclic execution.
 
 **Error compounding**: When agents relay information through text, errors
 compound. A hallucination in step 1 becomes "fact" in step 5. Research
-shows multi-agent systems can exhibit 17x error rates vs single agents
+shows multi-agent systems can exhibit [17x error rates](https://towardsdatascience.com/why-your-multi-agent-system-is-failing-escaping-the-17x-error-trap-of-the-bag-of-agents/) vs single agents
 ("bag of agents" anti-pattern).
 
 **Token cost scaling**: Multi-agent systems consume 15x more tokens for ~90%
@@ -346,11 +349,12 @@ begins.
 **Fundamental tension**: Multi-agent systems are a workaround for the limits
 of current LLMs. As base models become more capable, fewer tasks will require
 multi-agent decomposition. The field may be building elaborate scaffolding
-around a temporary limitation.
+around a temporary limitation. See [R6: Emergent Computation](r6-emergent-computation.md)
+for how self-organizing patterns may shift this calculus.
 
 **Gartner projection**: 40% of enterprise apps will feature task-specific AI
-agents by end of 2026 (up from <5% in 2025), but 40% of agentic AI projects
-will fail by 2027 due to inadequate risk controls.
+agents by end of 2026 (up from <5% in 2025), but [40% of agentic AI projects
+will fail](https://github.blog/ai-and-ml/generative-ai/multi-agent-workflows-often-fail-heres-how-to-engineer-ones-that-dont/) by 2027 due to inadequate risk controls.
 
 ### 3.4 What Are They Converging Toward?
 
@@ -365,7 +369,7 @@ Despite surface differences, the frameworks are converging on shared primitives:
    delegation, LangGraph's conditional edges).
 
 3. **Structured state management**: All production frameworks now include
-   some form of persistent, inspectable state (LangGraph's StateGraph,
+   some form of persistent, inspectable [state](r3-agent-memory.md) (LangGraph's StateGraph,
    Temporal's workflow state, Agents SDK's tracing).
 
 4. **Guardrails as first-class**: Input/output validation, not as an
@@ -389,6 +393,10 @@ Despite surface differences, the frameworks are converging on shared primitives:
 
 ## 4. Implications for Gas Town
 
+See also [S1: Gap Analysis](s1-gap-analysis.md), [S2: Abstraction Map](s2-abstraction-map.md),
+and [S3: Architecture Sketch](s3-architecture-sketch.md) for the synthesis that builds on
+this survey.
+
 Gas Town's architecture already embodies several frontier patterns:
 
 | Frontier Pattern | Gas Town Equivalent |
@@ -403,17 +411,17 @@ Gas Town's architecture already embodies several frontier patterns:
 
 **Gaps relative to frontier**:
 - No native cyclic execution (formulas are linear checklists)
-- No standardized MCP/A2A integration for external agent interop
-- Coordination is mail-based (high latency vs event-driven)
+- No standardized [MCP/A2A](r4-tool-ecosystems.md) integration for external agent interop
+- Coordination is mail-based (high latency vs [event-driven](r2-reactive-dataflow.md))
 - No built-in tracing/replay of agent execution paths
 
 **Opportunities**:
-- The formula/molecule system could evolve toward LangGraph-style state
-  graphs with conditional edges and cycles
-- MCP server integration would allow polecats to expose capabilities to
-  external agents
-- Temporal-style durability guarantees could strengthen the already-durable
-  worktree + Dolt foundation
+- The formula/molecule system could evolve toward LangGraph-style [state
+  graphs](r2-reactive-dataflow.md) with conditional edges and cycles
+- [MCP server](r4-tool-ecosystems.md) integration would allow polecats to
+  expose capabilities to external agents
+- [Temporal-style durability](r5-production-deployments.md) guarantees could
+  strengthen the already-durable worktree + Dolt foundation
 
 ---
 
@@ -424,7 +432,7 @@ Gas Town's architecture already embodies several frontier patterns:
    expressiveness), OpenAI Agents SDK (minimal primitives), and Temporal
    (durable execution). CrewAI retains mindshare for rapid prototyping.
 
-2. **Patterns beat frameworks.** Anthropic's "Building Effective Agents"
+2. **Patterns beat frameworks.** Anthropic's "[Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)"
    has more lasting influence than any single SDK. The best practitioners
    pick patterns first, then choose (or build) minimal infrastructure.
 
@@ -440,12 +448,16 @@ Gas Town's architecture already embodies several frontier patterns:
 5. **Multi-agent is a transitional architecture.** As models improve, the
    sweet spot for multi-agent decomposition will shrink. Systems should be
    designed so that agent boundaries can be collapsed as model capability
-   grows — not calcified into permanent architecture.
+   grows — not calcified into permanent architecture. See
+   [R3: Agent Memory](r3-agent-memory.md) on how persistent identity may
+   outlast the multi-agent pattern itself.
 
 6. **The 17x error trap is real.** Naive multi-agent decomposition
    multiplies failure modes. The key engineering discipline is: decompose
    only when the task genuinely requires it, minimize inter-agent
-   communication, and validate at every handoff boundary.
+   communication, and validate at every handoff boundary. See
+   [R5: Production Deployments](r5-production-deployments.md) for real-world
+   failure modes and mitigation strategies.
 
 ---
 

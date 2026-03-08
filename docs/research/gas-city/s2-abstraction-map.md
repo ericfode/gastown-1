@@ -1,7 +1,7 @@
 # S2: Abstraction Map — Candidate City-Level Abstractions
 
 **Bead**: gt-w6q | **Date**: 2026-03-08 | **Author**: polecat/cheedo
-**Sources**: R1-R6 (Phase 1 Research), S1 (Gap Analysis)
+**Sources**: R1-R6 (Phase 1 Research), [S1](s1-gap-analysis.md) (Gap Analysis)
 
 ---
 
@@ -44,7 +44,7 @@ tracked.
 
 ### 1.2 What Gas City Needs (Capabilities)
 
-The S1 gap analysis identified five capability gaps. The abstractions
+The [S1](s1-gap-analysis.md) gap analysis identified five capability gaps. The abstractions
 below are the **mechanisms** that close those gaps:
 
 ```
@@ -84,9 +84,9 @@ When a source cell changes:
    semantically equivalent, downstream cells stay clean
 
 **Grounding in research**:
-- Adapton (R2): demand-driven incremental computation
-- Salsa (R2): red-green backdating for rust-analyzer
-- Incremental/Jane Street (R2): observer-scoped stabilization
+- [Adapton](https://github.com/Adapton/adapton.rust) ([R2](r2-reactive-dataflow.md)): demand-driven incremental computation
+- [Salsa](https://github.com/salsa-rs/salsa) ([R2](r2-reactive-dataflow.md)): red-green backdating for rust-analyzer
+- Incremental/Jane Street ([R2](r2-reactive-dataflow.md)): observer-scoped stabilization
 
 **Mapping to Gas Town primitives**:
 
@@ -98,7 +98,7 @@ When a source cell changes:
 | Observer | Whoever runs `bd show` or `gt prime` | Track active observers to scope computation |
 | Cutoff | (none) | Structural/semantic diff on cell outputs |
 
-**The cost structure inversion** (R2 §4): Traditional reactive systems
+**The cost structure inversion** ([R2](r2-reactive-dataflow.md) §4): Traditional reactive systems
 optimize for cheap evaluation with expensive dependency tracking. Gas
 City inverts this — dependency tracking is cheap (small DAGs of beads)
 while evaluation is expensive (LLM calls costing seconds and dollars).
@@ -165,9 +165,9 @@ step1 → step2 → step3 (implement) ──────┤→ step6 (commit) �
 ```
 
 **Grounding in research**:
-- LangGraph (R1): graph-based workflow with cycles and branching
-- Temporal (R1): durable execution with dependency-driven scheduling
-- Noria (R2): partially stateful dataflow with demand-driven
+- [LangGraph](https://github.com/langchain-ai/langgraph) ([R1](r1-orchestration-frontier.md)): graph-based workflow with cycles and branching
+- [Temporal](https://temporal.io/) ([R1](r1-orchestration-frontier.md)): durable execution with dependency-driven scheduling
+- [Noria](https://github.com/mit-pdos/noria) ([R2](r2-reactive-dataflow.md)): partially stateful dataflow with demand-driven
   materialization
 
 **Mapping to Gas Town**:
@@ -222,11 +222,11 @@ retrieval by future agents on similar tasks.
    into higher-level insights (Stanford Generative Agents pattern)
 
 **Grounding in research**:
-- Reflexion (R3): verbal self-reflection yields 8%+ improvement
-- Stanford Generative Agents (R3): reflection creates abstraction
+- [Reflexion](https://github.com/noahshinn/reflexion) ([R3](r3-agent-memory.md)): verbal self-reflection yields 8%+ improvement
+- Stanford Generative Agents ([R3](r3-agent-memory.md)): reflection creates abstraction
   layers over raw experience; ablation shows each component
   (memory, reflection, planning) is necessary
-- MemGPT (R3): sleep-time consolidation of short-term to long-term
+- [MemGPT](https://github.com/letta-ai/letta) ([R3](r3-agent-memory.md)): sleep-time consolidation of short-term to long-term
   memory
 
 **Mapping to Gas Town**:
@@ -239,7 +239,7 @@ retrieval by future agents on similar tasks.
 | Identity accumulation | Capability Ledger | Ledger already records completions; add reflection summaries |
 
 **Impact**: MEDIUM-HIGH — directly addresses the "intelligence layer"
-gap identified in S1 §2.2. Storage is solved (Dolt); the gap is
+gap identified in [S1](s1-gap-analysis.md) §2.2. Storage is solved (Dolt); the gap is
 deciding what to store and when to retrieve.
 
 **Durability**: HIGH — structured reflection is not a capability that
@@ -284,10 +284,10 @@ can be instantiated in future workflows.
    based on bead description similarity
 
 **Grounding in research**:
-- Voyager (R3): skill library where successful Minecraft actions are
+- [Voyager](https://github.com/MineDojo/Voyager) ([R3](r3-agent-memory.md)): skill library where successful Minecraft actions are
   stored as reusable JavaScript programs with descriptions and
   pre/post conditions
-- Skills.sh (R4): 283,000+ packages of agent capabilities, npm-style
+- Skills.sh ([R4](r4-tool-ecosystems.md)): 283,000+ packages of agent capabilities, npm-style
 - Gas Town's own formulas: already a form of procedural memory, but
   human-authored and static
 
@@ -342,12 +342,12 @@ being centrally dispatched by the Mayor.
 4. Unmatched beads escalate to central dispatch as a fallback
 
 **Grounding in research**:
-- Market-based coordination (R6 §3): up to 10% accuracy gains from
+- Market-based coordination ([R6](r6-emergent-computation.md) §3): up to 10% accuracy gains from
   market-making in multi-agent LLM systems
-- Scaling science (R6 §6): centralized coordination yields +80.8%
+- Scaling science ([R6](r6-emergent-computation.md) §6): centralized coordination yields +80.8%
   on parallelizable tasks; the market should route sequential tasks
   to single agents
-- CRAG (R6 §3): rules of interaction matter more than individual
+- CRAG ([R6](r6-emergent-computation.md) §3): rules of interaction matter more than individual
   agent intelligence
 
 **Mapping to Gas Town**:
@@ -381,7 +381,7 @@ authoritative assignments.
 
 **Second-order risk**: Complexity. The market adds a coordination
 layer that must be debugged, monitored, and maintained. Gas Town's
-current simplicity is an asset (S1 §4.1 — simpler systems win).
+current simplicity is an asset ([S1](s1-gap-analysis.md) §4.1 — simpler systems win).
 
 **Verdict**: **DEFER** — not justified at current fleet scale. The
 Mayor's central dispatch is adequate. Revisit when fleet size exceeds
@@ -410,10 +410,10 @@ logic errors, and style violations before gates run.
    findings block the merge
 
 **Grounding in research**:
-- Devin (R5): dedicated Critic model catches security and logic
+- [Devin](https://devin.ai/) ([R5](r5-production-deployments.md)): dedicated Critic model catches security and logic
   errors before execution
-- Factory (R5): Judge agent filters before human review
-- The universal bottleneck (R5 §2.1): PR review time up 91% with
+- Factory ([R5](r5-production-deployments.md)): Judge agent filters before human review
+- The universal bottleneck ([R5](r5-production-deployments.md) §2.1): PR review time up 91% with
   AI adoption, 67.3% AI-generated PR rejection rate
 
 **Mapping to Gas Town**:
@@ -471,10 +471,10 @@ external capabilities through the same protocols.
   deployment.
 
 **Grounding in research**:
-- MCP (R4): 97M+ monthly SDK downloads, de facto agent-tool standard
-- A2A (R4): agent-to-agent coordination under Linux Foundation (AAIF)
-- ANP (R4): decentralized agent network protocol (early stage)
-- AAIF (R4): convergence of all major AI companies on open standards
+- MCP ([R4](r4-tool-ecosystems.md)): 97M+ monthly SDK downloads, de facto agent-tool standard
+- A2A ([R4](r4-tool-ecosystems.md)): agent-to-agent coordination under Linux Foundation (AAIF)
+- ANP ([R4](r4-tool-ecosystems.md)): decentralized agent network protocol (early stage)
+- AAIF ([R4](r4-tool-ecosystems.md)): convergence of all major AI companies on open standards
 
 **Mapping to Gas Town**:
 
@@ -660,7 +660,7 @@ adds reactive composition, learning, and quality mechanisms.
 
 ## 6. Durability Analysis: What Survives Better Models?
 
-The strongest signal from the research (R1, R5, R6) is that simpler
+The strongest signal from the research ([R1](r1-orchestration-frontier.md), [R5](r5-production-deployments.md), [R6](r6-emergent-computation.md)) is that simpler
 systems outperform complex ones when the base model is capable enough.
 Each abstraction must pass the durability test: **"Would a more
 capable base model make this unnecessary?"**
@@ -679,7 +679,7 @@ capable base model make this unnecessary?"**
 
 ## 7. Open Design Questions
 
-Each ADOPT abstraction raises design questions that S3 (Architecture
+Each ADOPT abstraction raises design questions that [S3](s3-architecture-sketch.md) (Architecture
 Sketch) should address:
 
 ### 7.1 Reactive Cells
@@ -760,7 +760,7 @@ types. Generates data that Skill Crystals (Phase 2) will consume.
 | 2c | Critic Lens | Calibrate thresholds, promote to blocking |
 
 **Why second**: Independent of Phase 1. High feasibility. Addresses
-the human review bottleneck identified across R5 and S1.
+the human review bottleneck identified across [R5](r5-production-deployments.md) and [S1](s1-gap-analysis.md).
 
 ### Phase 3: Reactive Foundation (mid-term — beads enhancement)
 
@@ -803,11 +803,11 @@ after Phase 1 has been running.
 ## Sources
 
 This synthesis draws from all six Phase 1 research reports and the
-S1 gap analysis:
-- R1: Orchestration Frontier Survey (gt-eth)
-- R2: Reactive Dataflow and Incremental Computation (gt-m9z)
-- R3: Agent Memory and Identity (gt-0g1)
-- R4: Tool Ecosystems and MCP Evolution (gt-xm8)
-- R5: Production Agent Deployments (gt-36n)
-- R6: Emergent Computation and Self-Organization (gt-djy)
-- S1: Gap Analysis — Gas Town vs Frontier (gt-026)
+[S1](s1-gap-analysis.md) gap analysis:
+- [R1](r1-orchestration-frontier.md): Orchestration Frontier Survey (gt-eth)
+- [R2](r2-reactive-dataflow.md): Reactive Dataflow and Incremental Computation (gt-m9z)
+- [R3](r3-agent-memory.md): Agent Memory and Identity (gt-0g1)
+- [R4](r4-tool-ecosystems.md): Tool Ecosystems and MCP Evolution (gt-xm8)
+- [R5](r5-production-deployments.md): Production Agent Deployments (gt-36n)
+- [R6](r6-emergent-computation.md): Emergent Computation and Self-Organization (gt-djy)
+- [S1](s1-gap-analysis.md): Gap Analysis — Gas Town vs Frontier (gt-026)
