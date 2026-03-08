@@ -1,0 +1,37 @@
+# Wide fan-out: source → 4 parallel analyzers → synthesis
+# Tests: maximum parallelism, all-must-be-fresh gate
+name: wide-fan
+cells:
+  - name: source
+    type: text
+    prompt: "Read the system."
+
+  - name: security
+    type: synthesis
+    prompt: "Security analysis of {{source}}"
+    refs: [source]
+
+  - name: performance
+    type: synthesis
+    prompt: "Performance analysis of {{source}}"
+    refs: [source]
+
+  - name: maintainability
+    type: synthesis
+    prompt: "Maintainability analysis of {{source}}"
+    refs: [source]
+
+  - name: correctness
+    type: synthesis
+    prompt: "Correctness analysis of {{source}}"
+    refs: [source]
+
+  - name: report
+    type: text
+    prompt: |
+      System report:
+      Security: {{security}}
+      Performance: {{performance}}
+      Maintainability: {{maintainability}}
+      Correctness: {{correctness}}
+    refs: [security, performance, maintainability, correctness]

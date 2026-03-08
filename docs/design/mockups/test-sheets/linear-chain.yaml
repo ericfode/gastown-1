@@ -1,0 +1,22 @@
+# Linear chain: A → B → C → D
+# Tests: sequential evaluation, staleness propagation depth
+name: linear-chain
+cells:
+  - name: source
+    type: text
+    prompt: "Read the raw data."
+
+  - name: extract
+    type: inventory
+    prompt: "From the raw data: {{source}}, extract key entities."
+    refs: [source]
+
+  - name: analyze
+    type: synthesis
+    prompt: "Analyze these entities: {{extract}}"
+    refs: [extract]
+
+  - name: decide
+    type: decision
+    prompt: "Based on the analysis: {{analyze}}, what should we do?"
+    refs: [analyze]

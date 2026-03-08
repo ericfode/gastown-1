@@ -1,0 +1,22 @@
+# Diamond: A → B, A → C, B+C → D
+# Tests: fan-out then fan-in, partial readiness
+name: diamond
+cells:
+  - name: source
+    type: text
+    prompt: "Read the codebase."
+
+  - name: types
+    type: inventory
+    prompt: "From {{source}}, list all types."
+    refs: [source]
+
+  - name: tests
+    type: inventory
+    prompt: "From {{source}}, list all tests."
+    refs: [source]
+
+  - name: coverage
+    type: synthesis
+    prompt: "Compare types: {{types}} against tests: {{tests}}. What's missing?"
+    refs: [types, tests]
