@@ -1,8 +1,8 @@
 # S1: Gap Analysis — Gas Town vs Frontier
 
 **Bead**: gt-026 | **Date**: 2026-03-08 | **Author**: polecat/splendid
-**Sources**: R1 (Orchestration), R2 (Reactive Dataflow), R3 (Agent Memory),
-R4 (Tool Ecosystems), R5 (Production Deployments), R6 (Emergent Computation)
+**Sources**: [R1](r1-orchestration-frontier.md) (Orchestration), [R2](r2-reactive-dataflow.md) (Reactive Dataflow), [R3](r3-agent-memory.md) (Agent Memory),
+[R4](r4-tool-ecosystems.md) (Tool Ecosystems), [R5](r5-production-deployments.md) (Production Deployments), [R6](r6-emergent-computation.md) (Emergent Computation)
 
 ---
 
@@ -12,7 +12,7 @@ Gas Town is architecturally well-positioned relative to the multi-agent
 frontier. Its core design — role-based hierarchy, stigmergic coordination
 through Dolt-backed beads, isolated worktrees, formula-driven workflows, and
 a bisecting merge queue — independently arrived at patterns that production
-systems (Cursor, Devin, Codex) discovered through painful trial and error.
+systems ([Cursor](https://cursor.com/), [Devin](https://devin.ai/), Codex) discovered through painful trial and error.
 
 However, Gas Town has significant gaps in five areas: **reactive
 computation** (no demand-driven evaluation or cutoff), **agent memory**
@@ -33,16 +33,16 @@ templates (formulas)** — a combination not found in any surveyed system.
 
 | Frontier Pattern | Gas Town Implementation | Evidence |
 |------------------|------------------------|----------|
-| Role-based hierarchy | Mayor/Witness/Polecat/Refinery | R1 §3.2: role-playing failed (CrewAI), hierarchy works (Cursor). Gas Town's hierarchy is structural, not role-played. |
-| Explicit handoffs | Hook system, `gt done`, mail | R1 §3.4: all frameworks converging on explicit handoffs. Gas Town had this from inception. |
-| Durable execution | Dolt-backed beads + git worktrees | R1 §1.7: Temporal identified as gold standard. Gas Town achieves equivalent durability through Dolt + git, not workflow engines. |
-| Bounded autonomy | Formula checklists, escalation paths | R5 §2.3: dominant 2026 production pattern. Gas Town's formula system IS bounded autonomy. |
-| Stigmergic coordination | Beads as shared medium, minimal direct messaging | R6 §2: O(n) scaling vs O(n^2) direct messaging. Gas Town's "default to nudge" policy is stigmergic by design. |
-| Sandbox isolation | Git worktrees per polecat | R5 §1.5: Codex uses worktree isolation. Gas Town matches this pattern. |
-| Quality gates before merge | Refinery bisecting merge queue | R5 §4.1: human review is the universal bottleneck. Gas Town's automated gates partially address this. |
-| Event-sourced state | Dolt commit history on every bead write | R5 §1.4: OpenHands V1 adopted event-sourcing. Gas Town has this via Dolt. |
-| Actor model | Private state (worktrees) + message passing (mail) | R6 §5: Erlang/OTP patterns. Gas Town follows actor semantics naturally. |
-| Self-repair | Witness restarts stuck agents | R6 §4: CA self-repair property. Witness is Gas Town's self-repair mechanism. |
+| Role-based hierarchy | Mayor/Witness/Polecat/Refinery | [R1](r1-orchestration-frontier.md) §3.2: role-playing failed ([CrewAI](https://github.com/crewAIInc/crewAI)), hierarchy works (Cursor). Gas Town's hierarchy is structural, not role-played. |
+| Explicit handoffs | Hook system, `gt done`, mail | [R1](r1-orchestration-frontier.md) §3.4: all frameworks converging on explicit handoffs. Gas Town had this from inception. |
+| Durable execution | Dolt-backed beads + git worktrees | [R1](r1-orchestration-frontier.md) §1.7: [Temporal](https://temporal.io/) identified as gold standard. Gas Town achieves equivalent durability through Dolt + git, not workflow engines. |
+| Bounded autonomy | Formula checklists, escalation paths | [R5](r5-production-deployments.md) §2.3: dominant 2026 production pattern. Gas Town's formula system IS bounded autonomy. |
+| Stigmergic coordination | Beads as shared medium, minimal direct messaging | [R6](r6-emergent-computation.md) §2: O(n) scaling vs O(n^2) direct messaging. Gas Town's "default to nudge" policy is stigmergic by design. |
+| Sandbox isolation | Git worktrees per polecat | [R5](r5-production-deployments.md) §1.5: Codex uses worktree isolation. Gas Town matches this pattern. |
+| Quality gates before merge | Refinery bisecting merge queue | [R5](r5-production-deployments.md) §4.1: human review is the universal bottleneck. Gas Town's automated gates partially address this. |
+| Event-sourced state | Dolt commit history on every bead write | [R5](r5-production-deployments.md) §1.4: [OpenHands](https://github.com/All-Hands-AI/OpenHands) V1 adopted event-sourcing. Gas Town has this via Dolt. |
+| Actor model | Private state (worktrees) + message passing (mail) | [R6](r6-emergent-computation.md) §5: Erlang/OTP patterns. Gas Town follows actor semantics naturally. |
+| Self-repair | Witness restarts stuck agents | [R6](r6-emergent-computation.md) §4: CA self-repair property. Witness is Gas Town's self-repair mechanism. |
 
 ### 1.2 Frontier Maturity Assessment
 
@@ -71,10 +71,10 @@ Adaptive routing      ●          |           |     Fixed dispatch, no task-awa
 changes, there is no automatic staleness propagation, no demand-driven
 recomputation, and no cutoff to prevent unnecessary cascades.
 
-**What the frontier has** (R2):
-- **Adapton**: Demand-driven incremental computation — dirty-mark eagerly,
+**What the frontier has** ([R2](r2-reactive-dataflow.md)):
+- **[Adapton](https://github.com/Adapton/adapton.rust)**: Demand-driven incremental computation — dirty-mark eagerly,
   recompute lazily only when an observer demands the value.
-- **Salsa**: Backdating — if a recomputed value hasn't changed, downstream
+- **[Salsa](https://github.com/salsa-rs/salsa)**: Backdating — if a recomputed value hasn't changed, downstream
   dependents skip recomputation. Durability levels classify inputs by
   volatility.
 - **Incremental (Jane Street)**: Observer-scoped computation — only cells
@@ -85,8 +85,8 @@ computations requires these primitives. Without demand-driven cleaning,
 every upstream change triggers wasteful LLM re-evaluations. Without
 cutoff, cascades propagate unconditionally.
 
-**Recommended hybrid** (R2 §9): Eager dirty marking (Excel/Adapton) +
-lazy recomputation on demand (Adapton/Noria) + backdating/cutoff (Salsa)
+**Recommended hybrid** ([R2](r2-reactive-dataflow.md) §9): Eager dirty marking (Excel/Adapton) +
+lazy recomputation on demand (Adapton/[Noria](https://github.com/mit-pdos/noria)) + backdating/cutoff (Salsa)
 + batched stabilization in topological order (Incremental) + observer
 scoping (Incremental/Noria).
 
@@ -96,14 +96,14 @@ scoping (Incremental/Noria).
 (`MEMORY.md`) pattern is primitive. No structured reflection on
 completions. No skill discovery from successful patterns.
 
-**What the frontier has** (R3):
-- **MemGPT/Letta**: Tiered memory hierarchy (core/recall/archival) with
+**What the frontier has** ([R3](r3-agent-memory.md)):
+- **[MemGPT](https://github.com/letta-ai/letta)/Letta**: Tiered memory hierarchy (core/recall/archival) with
   self-editing memory blocks and sleep-time consolidation.
-- **Voyager**: Skill library where successful action patterns are stored
+- **[Voyager](https://github.com/MineDojo/Voyager)**: Skill library where successful action patterns are stored
   as reusable, composable code with natural-language descriptions.
 - **Stanford Generative Agents**: Memory stream + reflection + planning.
   Reflection creates abstraction layers over raw experience.
-- **Reflexion**: Verbal self-reflection on failures stored as episodic
+- **[Reflexion](https://github.com/noahshinn/reflexion)**: Verbal self-reflection on failures stored as episodic
   memory, yielding 8%+ improvement on subsequent attempts.
 
 **What Gas Town already has (but doesn't leverage)**:
@@ -132,7 +132,7 @@ mechanisms for deciding WHAT to store and WHEN to retrieve.
 to Gas Town. No mechanism to consume community skills. No federation
 between Gas Town rigs via standard protocols.
 
-**What the frontier has** (R4):
+**What the frontier has** ([R4](r4-tool-ecosystems.md)):
 - **MCP**: 97M+ monthly SDK downloads, 10,000+ active servers. De facto
   standard for agent-to-tool communication.
 - **A2A**: Agent-to-agent coordination with Agent Cards for capability
@@ -145,7 +145,7 @@ between Gas Town rigs via standard protocols.
 implementations. The internal protocols work well but are proprietary.
 External interoperability is the gap.
 
-**Strategic options** (R4 §11):
+**Strategic options** ([R4](r4-tool-ecosystems.md) §11):
 - Expose polecats as A2A Agent Cards (external delegation)
 - Consume skills.sh packages as formula steps
 - Federate Gas Town rigs via A2A
@@ -156,13 +156,13 @@ External interoperability is the gap.
 **Gap**: Refinery runs automated gates (build, test, lint) but does not
 perform adversarial code review. No equivalent to Devin's Critic model.
 
-**What the frontier has** (R5):
+**What the frontier has** ([R5](r5-production-deployments.md)):
 - **Devin**: Dedicated Critic model reviews for security vulnerabilities
   and logic errors before execution.
 - **Cursor**: Automated testing gates before human review.
 - **Factory**: Judge agent filters before human review.
 
-**Why it matters**: Human review is the universal bottleneck (R5 §2.1).
+**Why it matters**: Human review is the universal bottleneck ([R5](r5-production-deployments.md) §2.1).
 PR review time increases 91% with high AI adoption. An adversarial
 review agent would catch issues before they reach the merge queue,
 reducing human review burden.
@@ -177,7 +177,7 @@ before running gates.
 polecats). No task-aware routing. No self-selection. No distinction
 between parallelizable and sequential work.
 
-**What the frontier has** (R6):
+**What the frontier has** ([R6](r6-emergent-computation.md)):
 - **Scaling science** (Google, Dec 2025): Centralized coordination yields
   +80.8% on parallelizable tasks but degrades sequential reasoning by
   39-70%. Coordination strategy must match task structure.
@@ -237,7 +237,7 @@ Gas Town's formulas combine all three.
 
 ### 3.3 Stigmergic Coordination with Version-Controlled Medium
 
-The beads system is pure stigmergy (R6 §2): polecats don't message each
+The beads system is pure stigmergy ([R6](r6-emergent-computation.md) §2): polecats don't message each
 other — they read/write beads, commit to git, and the Refinery processes
 environmental state. The "default to nudge" policy minimizes direct
 communication overhead.
@@ -281,23 +281,23 @@ system — most assume agents should be persistent.
 
 ### 4.1 Simplicity vs. Sophistication
 
-A consistent finding across R1, R5, and R6: **simpler systems outperform
+A consistent finding across [R1](r1-orchestration-frontier.md), [R5](r5-production-deployments.md), and [R6](r6-emergent-computation.md): **simpler systems outperform
 more complex ones** when the base model is capable enough.
 
-- Claude Code ($1B+ ARR) uses a single-threaded agentic loop (R5)
-- Anthropic advocates "patterns over frameworks" (R1)
-- Heavier frameworks (CrewAI, AutoGen) have higher overhead and lower
-  production adoption (R1)
-- Multi-agent coordination degrades sequential reasoning by 39-70% (R6)
+- Claude Code ($1B+ ARR) uses a single-threaded agentic loop ([R5](r5-production-deployments.md))
+- Anthropic advocates "patterns over frameworks" ([R1](r1-orchestration-frontier.md))
+- Heavier frameworks (CrewAI, [AutoGen](https://github.com/microsoft/autogen)) have higher overhead and lower
+  production adoption ([R1](r1-orchestration-frontier.md))
+- Multi-agent coordination degrades sequential reasoning by 39-70% ([R6](r6-emergent-computation.md))
 
 **Implication for Gas Town**: Resist the temptation to add complexity.
 Each gap identified above should be evaluated against the question: "Does
 the base model's capability make this unnecessary?" As models improve,
-the sweet spot for multi-agent decomposition shrinks (R1 §5.5).
+the sweet spot for multi-agent decomposition shrinks ([R1](r1-orchestration-frontier.md) §5.5).
 
 ### 4.2 The Cost Structure Inversion
 
-R2 identifies a fundamental insight: Gas Town's cost structure is the
+[R2](r2-reactive-dataflow.md) identifies a fundamental insight: Gas Town's cost structure is the
 inverse of traditional reactive systems.
 
 | | Traditional | Gas Town |
@@ -309,16 +309,16 @@ inverse of traditional reactive systems.
 
 This inversion means Gas Town should not copy reactive system designs
 wholesale. It should use **eager marking** (cheap) with **lazy
-evaluation** (expensive) — the opposite of systems like Observable
+evaluation** (expensive) — the opposite of systems like [Observable](https://observablehq.com/)
 that auto-rerun eagerly.
 
 ### 4.3 The Error Amplification Constraint
 
 Multi-agent error amplification is a hard constraint, not just a concern:
-- 17x error rate in naive "bag of agents" (R1 §3.3)
+- 17x error rate in naive "bag of agents" ([R1](r1-orchestration-frontier.md) §3.3)
 - Independent agents amplify errors 17.2x; centralized coordination
-  contains to 4.4x (R6 §6)
-- 67.3% rejection rate for AI-generated PRs (R5 §2.1)
+  contains to 4.4x ([R6](r6-emergent-computation.md) §6)
+- 67.3% rejection rate for AI-generated PRs ([R5](r5-production-deployments.md) §2.1)
 
 Gas Town's architecture already mitigates this through:
 - The Refinery's bisecting merge queue (catches integration errors)
@@ -331,7 +331,7 @@ reduce the error rate before work reaches the merge queue.
 
 ### 4.4 The Protocol Convergence Window
 
-R4 identifies a convergence window: MCP, A2A, and skills.sh are
+[R4](r4-tool-ecosystems.md) identifies a convergence window: MCP, A2A, and skills.sh are
 standardizing under AAIF governance. The protocol layer is stabilizing.
 
 Gas Town's custom protocols (beads, mail, formulas) work well internally
@@ -351,26 +351,26 @@ capabilities.
 
 | # | Gap | What to Build | Source |
 |---|-----|---------------|--------|
-| 1 | No structured reflection | Post-completion reflection generation, persisted to beads | R3: Reflexion, Stanford agents |
-| 2 | No demand-driven computation | Eager dirty marking + lazy recomputation in Gas City DAG | R2: Adapton, Incremental |
-| 3 | No adversarial review | Critic/Judge role in Refinery pipeline | R5: Devin, Factory |
+| 1 | No structured reflection | Post-completion reflection generation, persisted to beads | [R3](r3-agent-memory.md): Reflexion, Stanford agents |
+| 2 | No demand-driven computation | Eager dirty marking + lazy recomputation in Gas City DAG | [R2](r2-reactive-dataflow.md): Adapton, Incremental |
+| 3 | No adversarial review | Critic/Judge role in Refinery pipeline | [R5](r5-production-deployments.md): Devin, Factory |
 
 ### Tier 2: Medium Impact, Requires Design
 
 | # | Gap | What to Build | Source |
 |---|-----|---------------|--------|
-| 4 | No cutoff/backdating | Structural comparison of cell outputs to stop cascades | R2: Salsa |
-| 5 | No skill discovery | Extract reusable patterns from successful completions | R3: Voyager |
-| 6 | No task-aware routing | Route sequential tasks to single agent, parallel to swarm | R6: Scaling science |
-| 7 | No retrieval-augmented priming | `gt prime` loads relevant episodic memories for current task | R3: MemGPT |
+| 4 | No cutoff/backdating | Structural comparison of cell outputs to stop cascades | [R2](r2-reactive-dataflow.md): Salsa |
+| 5 | No skill discovery | Extract reusable patterns from successful completions | [R3](r3-agent-memory.md): Voyager |
+| 6 | No task-aware routing | Route sequential tasks to single agent, parallel to swarm | [R6](r6-emergent-computation.md): Scaling science |
+| 7 | No retrieval-augmented priming | `gt prime` loads relevant episodic memories for current task | [R3](r3-agent-memory.md): MemGPT |
 
 ### Tier 3: Strategic, Requires Ecosystem Investment
 
 | # | Gap | What to Build | Source |
 |---|-----|---------------|--------|
-| 8 | No external interoperability | A2A Agent Cards for polecats, MCP for tool federation | R4: AAIF stack |
-| 9 | No skills consumption | Integrate skills.sh packages as formula steps | R4: Skills ecosystem |
-| 10 | No market-based self-selection | Polecats bid on beads based on capability and load | R6: Market mechanisms |
+| 8 | No external interoperability | A2A Agent Cards for polecats, MCP for tool federation | [R4](r4-tool-ecosystems.md): AAIF stack |
+| 9 | No skills consumption | Integrate skills.sh packages as formula steps | [R4](r4-tool-ecosystems.md): Skills ecosystem |
+| 10 | No market-based self-selection | Polecats bid on beads based on capability and load | [R6](r6-emergent-computation.md): Market mechanisms |
 
 ---
 
@@ -410,7 +410,7 @@ may become unnecessary as models improve at self-coordination.
 ### 6.3 The Gas City Transition
 
 Gas City (the next evolution) should be designed as a **demand-driven,
-batch-stabilized reactive dataflow engine** (R2 §9) where:
+batch-stabilized reactive dataflow engine** ([R2](r2-reactive-dataflow.md) §9) where:
 - Molecules are reactive DAGs, not linear checklists
 - Cells are lazily evaluated on demand, not eagerly dispatched
 - Cutoff prevents unnecessary cascade recomputation
@@ -418,7 +418,7 @@ batch-stabilized reactive dataflow engine** (R2 §9) where:
 - The cost model is inverted: cheap marking, expensive evaluation
 
 This positions Gas City at the intersection of reactive computation
-(R2), agent orchestration (R1), and production patterns (R5) — a
+([R2](r2-reactive-dataflow.md)), agent orchestration ([R1](r1-orchestration-frontier.md)), and production patterns ([R5](r5-production-deployments.md)) — a
 combination no existing system has achieved.
 
 ---
@@ -426,9 +426,9 @@ combination no existing system has achieved.
 ## Sources
 
 This synthesis draws from all six Phase 1 research reports:
-- R1: Orchestration Frontier Survey (gt-eth)
-- R2: Reactive Dataflow and Incremental Computation (gt-m9z)
-- R3: Agent Memory and Identity (gt-0g1)
-- R4: Tool Ecosystems and MCP Evolution (gt-xm8)
-- R5: Production Agent Deployments (gt-36n)
-- R6: Emergent Computation and Self-Organization (gt-djy)
+- [R1](r1-orchestration-frontier.md): Orchestration Frontier Survey (gt-eth)
+- [R2](r2-reactive-dataflow.md): Reactive Dataflow and Incremental Computation (gt-m9z)
+- [R3](r3-agent-memory.md): Agent Memory and Identity (gt-0g1)
+- [R4](r4-tool-ecosystems.md): Tool Ecosystems and MCP Evolution (gt-xm8)
+- [R5](r5-production-deployments.md): Production Agent Deployments (gt-36n)
+- [R6](r6-emergent-computation.md): Emergent Computation and Self-Organization (gt-djy)

@@ -2,10 +2,12 @@
 
 **Bead**: gt-m9z
 **Date**: 2026-03-08
-**Purpose**: Survey reactive dataflow paradigms applicable to Gas City's agent
+**Purpose**: Survey reactive dataflow paradigms applicable to [Gas City's](s3-architecture-sketch.md) agent
 computation model. Identify what happens when agent outputs become cells in a
 reactive DAG, how staleness propagates at scale, and whether reactive vs
 pull-based recomputation matters for LLM workloads.
+
+**See also**: [R1: Orchestration Frontier](r1-orchestration-frontier.md) · [R3: Agent Memory](r3-agent-memory.md) · [S1: Gap Analysis](s1-gap-analysis.md) · [S2: Abstraction Map](s2-abstraction-map.md) · [S3: Architecture Sketch](s3-architecture-sketch.md)
 
 ---
 
@@ -16,13 +18,13 @@ original spreadsheet:
 
 | System | Domain | Language | Key Innovation |
 |--------|--------|----------|----------------|
-| **Adapton** | PL research | OCaml/Racket/Rust | Demand-driven incremental computation |
-| **Salsa** | Compiler (rust-analyzer) | Rust | Red-green memoization with durability levels |
-| **Observable** | Notebooks | JavaScript | Language-level reactive dataflow |
+| [**Adapton**](https://doi.org/10.1145/2594291.2594324) | PL research | OCaml/Racket/Rust | Demand-driven incremental computation |
+| [**Salsa**](https://salsa-rs.github.io/salsa/) | Compiler ([rust-analyzer](https://rust-analyzer.github.io/)) | Rust | Red-green memoization with durability levels |
+| [**Observable**](https://observablehq.com/) | Notebooks | JavaScript | Language-level reactive dataflow |
 | **Excel** | Spreadsheet | C++ | Dirty-marking + calculation chain |
-| **Noria** | Database | Rust | Partially-stateful materialized views |
-| **Differential Dataflow** | Stream processing | Rust | Lattice-indexed difference collections |
-| **Incremental** (Jane Street) | Trading systems | OCaml | Self-adjusting computation with cutoffs |
+| [**Noria**](https://github.com/mit-pdos/noria) | Database | Rust | Partially-stateful materialized views |
+| [**Differential Dataflow**](https://github.com/TimelyDataflow/differential-dataflow) | Stream processing | Rust | Lattice-indexed difference collections |
+| [**Incremental**](https://blog.janestreet.com/introducing-incremental/) (Jane Street) | Trading systems | OCaml | Self-adjusting computation with cutoffs |
 
 ---
 
@@ -30,8 +32,8 @@ original spreadsheet:
 
 ### 2.1 Adapton — Demand-Driven Incremental Computation
 
-**Origin**: Hammer, Acar et al., PLDI 2014. Extended from Acar's
-self-adjusting computation (SAC) work at CMU (2002-2005).
+**Origin**: Hammer, Acar et al., [PLDI 2014](https://doi.org/10.1145/2594291.2594324). Extended from Acar's
+[self-adjusting computation](https://www.cs.cmu.edu/~umut/papers/thesis.pdf) (SAC) work at CMU (2002-2005).
 
 **Core idea**: Traditional incremental computation is *push-based* — when an
 input changes, all dependents are eagerly recomputed. Adapton inverts this
@@ -59,21 +61,21 @@ computation. The λ_ic^dd calculus formalizes this with an explicit separation
 between inner (incremental) and outer (observer) computations.
 
 **Gas City relevance**:
-- Gas City's `propagateStale` is exactly Adapton's dirty phase.
+- [Gas City's](s3-architecture-sketch.md) `propagateStale` is exactly Adapton's dirty phase.
 - Gas City currently lacks the demand phase — once marked stale, cells are
   eagerly recomputed. Adding demand-driven cleaning would avoid recomputing
   cells that no downstream observer needs.
-- The DCG's hierarchical structure maps to Gas City's molecule/cell nesting.
+- The DCG's hierarchical structure maps to Gas City's [molecule/cell nesting](s3-architecture-sketch.md).
 
-**Key paper**: Hammer, M.A. et al. "Adapton: Composable, Demand-Driven
-Incremental Computation." PLDI 2014.
+**Key paper**: Hammer, M.A. et al. ["Adapton: Composable, Demand-Driven
+Incremental Computation."](https://doi.org/10.1145/2594291.2594324) PLDI 2014.
 
 ---
 
 ### 2.2 Salsa — Red-Green Memoization for Compilers
 
 **Origin**: Matsakis (Rust team), inspired by Adapton + Roslyn's red-green
-trees. Powers rust-analyzer and rustc's query system.
+trees. Powers [rust-analyzer](https://rust-analyzer.github.io/) and rustc's query system.
 
 **Core idea**: Define a program as a set of *tracked queries*
 (functions K → V). Inputs are base queries set by the user. Derived queries
@@ -104,7 +106,7 @@ are pure functions of other queries. Salsa memoizes results and uses
   instead of a single revision number.
 - When only volatile inputs change, queries depending solely on durable
   inputs skip validation entirely.
-- In rust-analyzer, this eliminates ~300ms of unnecessary stdlib query
+- In rust-analyzer, this [eliminates ~300ms](https://rust-analyzer.github.io/blog/2023/07/24/durable-incrementality.html) of unnecessary stdlib query
   validation per keystroke.
 
 **Lazy invalidation**: When an input changes, Salsa does O(1) work
@@ -113,7 +115,7 @@ when queries are demanded. This is pull-based like Adapton but with a
 different mechanism (revision comparison vs. dirty flags).
 
 **Gas City relevance**:
-- Salsa's revision system maps to Gas City's molecule generations. Each
+- Salsa's revision system maps to [Gas City's molecule generations](s3-architecture-sketch.md). Each
   `evolve` creates a new revision. The question is whether cell values from
   the previous generation can be reused.
 - **Backdating is critical for LLM workloads**: If an upstream cell is
@@ -127,17 +129,17 @@ different mechanism (revision comparison vs. dirty flags).
   skipping recomputation of cells whose inputs haven't changed at their
   durability level.
 
-**Key source**: salsa-rs.github.io/salsa/reference/algorithm.html
+**Key source**: [salsa-rs.github.io/salsa/reference/algorithm.html](https://salsa-rs.github.io/salsa/reference/algorithm.html)
 
 ---
 
 ### 2.3 Observable — Language-Level Reactive Dataflow
 
-**Origin**: Mike Bostock (D3.js creator). Observable notebooks (2018),
-Observable Framework (2024).
+**Origin**: Mike Bostock ([D3.js](https://d3js.org/) creator). [Observable](https://observablehq.com/) notebooks (2018),
+[Observable Framework](https://observablehq.com/framework/) (2024).
 
 **Core idea**: Code cells in a notebook form a DAG based on variable
-references. The runtime topologically sorts cells and re-executes
+references. The runtime [topologically sorts cells](https://observablehq.com/@observablehq/reactive-dataflow) and re-executes
 downstream cells when upstream values change. Reactivity is at the
 *language level* — no API, no library calls, just variable references.
 
@@ -160,13 +162,13 @@ downstream cells when upstream values change. Reactivity is at the
   can be dynamic) but requires manual specification.
 - Observable notebooks are single-user, single-machine. Gas City extends
   the paradigm to multi-agent, distributed execution where "cell
-  evaluation" means "dispatch to a polecat."
+  evaluation" means "dispatch to a [polecat](s3-architecture-sketch.md)."
 
 ---
 
 ### 2.4 Excel — The Original Reactive Spreadsheet
 
-**Architecture — Smart Recalculation**:
+**Architecture — [Smart Recalculation](https://learn.microsoft.com/en-us/office/client-developer/excel/excel-recalculation)**:
 1. **Dependency tracking**: Excel maintains a precedent/dependent graph for
    every formula cell. When data changes, Excel marks the cell and all
    transitive dependents as **dirty**.
@@ -203,8 +205,8 @@ downstream cells when upstream values change. Reactivity is at the
 
 ### 2.5 Noria — Partially-Stateful Materialized Views
 
-**Origin**: Gjengset et al., MIT PDOS, OSDI 2018. A dataflow database for
-web applications.
+**Origin**: Gjengset et al., MIT PDOS, [OSDI 2018](https://www.usenix.org/conference/osdi18/presentation/gjengset). A dataflow database for
+web applications. [GitHub](https://github.com/mit-pdos/noria).
 
 **Core idea**: Compile SQL queries into a dataflow graph that incrementally
 maintains materialized views. The key innovation is *partial state*: only
@@ -234,7 +236,7 @@ Evict cold entries. Re-materialize on demand.
   state) maps to Gas City's potential "demand-driven cleaning" — when an
   observer demands a stale cell, walk backward through the DAG to find
   what needs recomputation.
-- Noria's dynamic graph mutation maps to Gas City's `evolve` operation —
+- Noria's dynamic graph mutation maps to [Gas City's `evolve` operation](s3-architecture-sketch.md) —
   adding new cells and wires to a running computation without restart.
 - Noria's delta propagation (deltas, not full values) maps to Gas City's
   potential "delta-aware recomputation" — sending diffs to cells instead
@@ -245,8 +247,8 @@ Evict cold entries. Re-materialize on demand.
 ### 2.6 Differential Dataflow — Lattice-Indexed Differences
 
 **Origin**: McSherry, Murray, Isaacs (Microsoft Research), CIDR 2013.
-Extended in the Timely Dataflow framework. Foundations formalized by
-Abadi and McSherry.
+Extended in the [Timely Dataflow](https://github.com/TimelyDataflow/timely-dataflow) framework. Foundations formalized by
+Abadi and McSherry. [GitHub](https://github.com/TimelyDataflow/differential-dataflow).
 
 **Core idea**: Track collections as *sets of differences* indexed by a
 *partially ordered set* (lattice) of versions. This generalizes both
@@ -269,7 +271,7 @@ streaming (totally ordered time) and iterative (nested loops) computation.
 - **Arrangement**: Persistent, indexed representations of difference
   collections that enable efficient random access. Critical for joins.
 
-**DBSP relationship**: DBSP (Budiu et al.) is a simplified version where
+**DBSP relationship**: [DBSP](https://doi.org/10.14778/3611479.3611521) (Budiu et al.) is a simplified version where
 time is a single totally-ordered counter. DBSP trades expressiveness
 (no nested iteration) for simplicity and automatic incrementalization
 of arbitrary SQL queries.
@@ -293,8 +295,8 @@ of arbitrary SQL queries.
 
 ### 2.7 Incremental (Jane Street) — Self-Adjusting Computation for Trading
 
-**Origin**: Developed at Jane Street for trading systems. OCaml library.
-Based on Acar's self-adjusting computation theory.
+**Origin**: Developed at [Jane Street](https://blog.janestreet.com/introducing-incremental/) for trading systems. OCaml library.
+Based on Acar's [self-adjusting computation](https://www.cs.cmu.edu/~umut/papers/thesis.pdf) theory.
 
 **Core idea**: Build a computation graph where nodes are incremental values.
 When inputs change, explicitly `stabilize()` the graph to propagate updates
@@ -680,17 +682,17 @@ model should be inverted accordingly: eager marking, lazy evaluation.
 ## References
 
 ### Primary Sources
-- Hammer, M.A. et al. "Adapton: Composable, Demand-Driven Incremental Computation." PLDI 2014.
-- McSherry, F. et al. "Differential Dataflow." CIDR 2013.
-- Gjengset, J. et al. "Noria: Dynamic, Partially-Stateful Data-Flow for High-Performance Web Applications." OSDI 2018.
-- Katsumata, S. "Parametric Effect Monads and Semantics of Effect Systems." POPL 2014.
-- Acar, U.A. "Self-Adjusting Computation." CMU PhD Thesis, 2005.
+- Hammer, M.A. et al. ["Adapton: Composable, Demand-Driven Incremental Computation."](https://doi.org/10.1145/2594291.2594324) PLDI 2014.
+- McSherry, F. et al. ["Differential Dataflow."](https://github.com/TimelyDataflow/differential-dataflow/blob/master/differentialdataflow.pdf) CIDR 2013.
+- Gjengset, J. et al. ["Noria: Dynamic, Partially-Stateful Data-Flow for High-Performance Web Applications."](https://www.usenix.org/conference/osdi18/presentation/gjengset) OSDI 2018.
+- Katsumata, S. ["Parametric Effect Monads and Semantics of Effect Systems."](https://doi.org/10.1145/2535838.2535846) POPL 2014.
+- Acar, U.A. ["Self-Adjusting Computation."](https://www.cs.cmu.edu/~umut/papers/thesis.pdf) CMU PhD Thesis, 2005.
 
 ### System Documentation
-- Salsa red-green algorithm: salsa-rs.github.io/salsa/reference/algorithm.html
-- rust-analyzer durable incrementality: rust-analyzer.github.io/blog/2023/07/24/durable-incrementality.html
-- Jane Street Incremental: blog.janestreet.com/introducing-incremental/
-- Observable reactive dataflow: observablehq.com/@observablehq/reactive-dataflow
-- Excel recalculation: learn.microsoft.com/en-us/office/client-developer/excel/excel-recalculation
-- Noria: github.com/mit-pdos/noria
-- Differential Dataflow: github.com/TimelyDataflow/differential-dataflow
+- Salsa red-green algorithm: [salsa-rs.github.io/salsa/reference/algorithm.html](https://salsa-rs.github.io/salsa/reference/algorithm.html)
+- rust-analyzer durable incrementality: [rust-analyzer.github.io/blog/2023/07/24/durable-incrementality.html](https://rust-analyzer.github.io/blog/2023/07/24/durable-incrementality.html)
+- Jane Street Incremental: [blog.janestreet.com/introducing-incremental/](https://blog.janestreet.com/introducing-incremental/)
+- Observable reactive dataflow: [observablehq.com/@observablehq/reactive-dataflow](https://observablehq.com/@observablehq/reactive-dataflow)
+- Excel recalculation: [learn.microsoft.com/en-us/office/client-developer/excel/excel-recalculation](https://learn.microsoft.com/en-us/office/client-developer/excel/excel-recalculation)
+- Noria: [github.com/mit-pdos/noria](https://github.com/mit-pdos/noria)
+- Differential Dataflow: [github.com/TimelyDataflow/differential-dataflow](https://github.com/TimelyDataflow/differential-dataflow)

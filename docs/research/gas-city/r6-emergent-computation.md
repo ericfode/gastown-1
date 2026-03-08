@@ -10,7 +10,7 @@ Swarm intelligence (SI) studies how simple agents following local rules produce
 complex global behavior without central control. Classic examples: ant colony
 optimization, particle swarm optimization, bird flocking (boids).
 
-Three foundational rules (Reynolds, 1987): separation, alignment, cohesion.
+Three foundational rules ([Reynolds, 1987](https://en.wikipedia.org/wiki/Boids)): separation, alignment, cohesion.
 From these local interactions, global coordination emerges — no agent has a
 global view, yet the swarm navigates, forages, and adapts.
 
@@ -19,21 +19,21 @@ global view, yet the swarm navigates, forages, and adapts.
 Recent work replaces hard-coded agent programs with LLM-driven prompts in
 multi-agent simulations. Key papers:
 
-- **"Multi-Agent Systems Powered by Large Language Models: Applications in
-  Swarm Intelligence"** (Frontiers in AI, 2025; arXiv:2503.03800). Integrates
+- **["Multi-Agent Systems Powered by Large Language Models: Applications in
+  Swarm Intelligence"](https://arxiv.org/abs/2503.03800)** (Frontiers in AI, 2025). Integrates
   LLMs with the NetLogo simulation platform via GPT-4o. Demonstrates LLMs
   can induce emergent behaviors in ant colony foraging and bird flocking
   scenarios. The approach enables studying self-organizing processes where
   agent rules are expressed in natural language rather than code.
 
-- **"Benchmarking LLMs' Swarm Intelligence"** (arXiv:2505.04364, 2025).
+- **["Benchmarking LLMs' Swarm Intelligence"](https://arxiv.org/abs/2505.04364)** (2025).
   Introduces SwarmBench with five coordination tasks: Pursuit, Synchronization,
   Foraging, Flocking, Transport. Finding: current LLMs significantly struggle
   with long-range planning and adaptive strategy formation under swarm-like
   constraints (limited local perception, restricted communication).
 
-- **"Multi-Agent LLM Systems: From Emergent Collaboration to Structured
-  Collective Intelligence"** (Preprints.org, 2025). Reports that naive "agent
+- **["Multi-Agent LLM Systems: From Emergent Collaboration to Structured
+  Collective Intelligence"](https://www.preprints.org/manuscript/202511.1370)** (Preprints.org, 2025). Reports that naive "agent
   swarms" are prone to failure modes: degeneration of thought, majority
   herding, and overconfident consensus. Groups of interacting LLMs can improve
   factuality on some benchmarks, but the gains are fragile.
@@ -44,7 +44,7 @@ Swarm intelligence offers a model for coordination without central planning,
 but LLM-based swarms reveal important limitations. Pure emergent coordination
 works well for spatial/physical tasks but struggles with sequential reasoning.
 Agent systems need hybrid approaches: swarm-like autonomy for parallelizable
-work, structured coordination for reasoning-heavy tasks.
+work, structured coordination for reasoning-heavy tasks (see [R1: Orchestration Frontier](r1-orchestration-frontier.md)).
 
 **Gas Town relevance**: Polecats operating independently on beads, with the
 Witness and Refinery providing environmental signals (not direct control),
@@ -57,7 +57,7 @@ is a form of swarm coordination. The merge queue acts as a stigmergic medium.
 
 Stigmergy is indirect coordination through the environment. The trace left
 by one agent's action stimulates subsequent action by the same or different
-agent. Coined by Pierre-Paul Grasse (1959) studying termite nest construction.
+agent. Coined by [Pierre-Paul Grassé (1959)](https://en.wikipedia.org/wiki/Stigmergy) studying termite nest construction.
 
 Two forms:
 - **Sematectonic stigmergy**: Physical changes to the environment (termites
@@ -81,8 +81,8 @@ coordinate through shared work-order states rather than direct messaging.
 The MOSAIK framework (ESWC 2023) uses stigmergic principles for decentralized
 energy system control.
 
-In reinforcement learning, "Stigmergic Independent Reinforcement Learning"
-(arXiv:1911.12504) uses environmental markers as an implicit communication
+In reinforcement learning, ["Stigmergic Independent Reinforcement Learning"](https://arxiv.org/abs/1911.12504)
+uses environmental markers as an implicit communication
 channel between independently learning agents, avoiding the complexity of
 explicit message-passing protocols.
 
@@ -119,8 +119,8 @@ resource allocation:
 
 ### Recent Work
 
-- **"From Competition to Coordination: Market Making as a Scalable Framework
-  for Safe and Aligned Multi-Agent LLM Systems"** (arXiv:2511.17621, Nov 2025).
+- **["From Competition to Coordination: Market Making as a Scalable Framework
+  for Safe and Aligned Multi-Agent LLM Systems"](https://arxiv.org/abs/2511.17621)** (Nov 2025).
   Organizes agent interactions as structured economic exchanges. Each agent
   acts as a market participant, updating and trading probabilistic beliefs.
   Market-based coordination yields accuracy gains of up to 10% over single-shot
@@ -128,12 +128,12 @@ resource allocation:
   with collective epistemic goals, the framework promotes self-organizing,
   verifiable reasoning without external enforcement.
 
-- **"Decentralized Adaptive Task Allocation for Dynamic Multi-Agent Systems"**
+- **["Decentralized Adaptive Task Allocation for Dynamic Multi-Agent Systems"](https://www.nature.com/articles/s41598-025-21709-9)**
   (Scientific Reports, 2025). Proposes adaptive mechanisms for task allocation
   in dynamic environments where agent capabilities and task requirements
   change over time.
 
-- **LLM-based Data Marketplace Simulation** (arXiv:2511.13233, 2025). Buyer
+- **[LLM-based Data Marketplace Simulation](https://arxiv.org/abs/2511.13233)** (2025). Buyer
   and seller agents powered by LLMs autonomously perform strategic actions
   (planning, searching, purchasing, pricing) in data marketplaces.
 
@@ -167,9 +167,9 @@ primitive price signal.
 
 Cellular automata (CA) demonstrate how simple local rules produce complex
 global computation. Key results:
-- Conway's Game of Life: Turing-complete from four rules
-- Wolfram's Rule 110: Proven universal (simple 1D automaton)
-- Evoloops (1999, 25th anniversary 2024): Darwinian evolution of
+- [Conway's Game of Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life): Turing-complete from four rules
+- [Wolfram's Rule 110](https://en.wikipedia.org/wiki/Rule_110): Proven universal (simple 1D automaton)
+- [Evoloops](https://direct.mit.edu/artl/article/31/1/81/124368) (1999, 25th anniversary 2024): Darwinian evolution of
   self-reproducing organisms within deterministic cellular automata
 
 ### Neural Cellular Automata (NCA)
@@ -181,13 +181,13 @@ updates its state. Properties:
 - Self-repairing: damage to the pattern is autonomously repaired
 - Differentiable: can be trained end-to-end with gradient descent
 
-Growing Neural Cellular Automata (Mordvintsev et al., Distill 2020) showed
+[Growing Neural Cellular Automata](https://distill.pub/2020/growing-ca/) (Mordvintsev et al., Distill 2020) showed
 that complex morphogenesis can emerge from simple learned local rules.
 
 ### Locally Adaptive CA
 
-"Locally Adaptive Cellular Automata for Goal-Oriented Self-Organization"
-(arXiv:2306.07067, 2023) introduces CA where cells adapt their rules based
+["Locally Adaptive Cellular Automata for Goal-Oriented Self-Organization"](https://arxiv.org/abs/2306.07067)
+(2023) introduces CA where cells adapt their rules based
 on local context, enabling goal-directed self-organization without global
 coordination.
 
@@ -214,18 +214,18 @@ richer environmental feedback.
 
 ### Classical Actor Model
 
-The Actor Model (Hewitt, 1973) defines concurrent computation through:
+The [Actor Model](https://en.wikipedia.org/wiki/Actor_model) (Hewitt, 1973) defines concurrent computation through:
 - **Actors**: Fundamental units with private state
 - **Messages**: Only way to communicate (no shared state)
 - **Behaviors**: Response to messages (can create actors, send messages,
   change own state)
 
 Properties: location transparency, supervision hierarchies, fault isolation.
-Implemented in Erlang/OTP, Akka, Microsoft Orleans, Apache Pekko.
+Implemented in [Erlang/OTP](https://www.erlang.org/), [Akka](https://akka.io/), [Microsoft Orleans](https://learn.microsoft.com/en-us/dotnet/orleans/), [Apache Pekko](https://pekko.apache.org/).
 
 ### Modern Evolution: Agentic Mesh
 
-"Agentic Mesh" (2025) extends the actor model for AI agent systems:
+["Agentic Mesh"](https://medium.com/@visrow/agentic-mesh-revolutionizing-distributed-ai-systems-in-the-agentic-ecosystem-1062d036769a) (2025) extends the actor model for AI agent systems:
 - Agents as autonomous nodes with specialized capabilities
 - Dynamic capability discovery and composition
 - Mesh networking for peer-to-peer coordination
@@ -233,8 +233,8 @@ Implemented in Erlang/OTP, Akka, Microsoft Orleans, Apache Pekko.
 
 ### Agent-to-Agent Protocol (A2A)
 
-Google introduced A2A in 2025 for agent interoperability across frameworks
-and vendors. Complements MCP (tool access) with agent-to-agent communication
+Google introduced [A2A](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/) in 2025 for agent interoperability across frameworks
+and vendors. Complements MCP (tool access — see [R4: Tool Ecosystems](r4-tool-ecosystems.md)) with agent-to-agent communication
 standards.
 
 ### Evolving Orchestration
@@ -289,7 +289,7 @@ estimate.
 
 ### The Scaling Science (2025)
 
-"Towards a Science of Scaling Agent Systems" (arXiv:2512.08296, Dec 2025,
+["Towards a Science of Scaling Agent Systems"](https://arxiv.org/abs/2512.08296) (Dec 2025,
 Google Research) provides rigorous empirical analysis:
 
 **Three dominant effects:**
@@ -331,8 +331,8 @@ dispatch.
 
 ### Stanford Generative Agents (2023)
 
-"Generative Agents: Interactive Simulacra of Human Behavior" (Park et al.,
-UIST 2023, arXiv:2304.03442) placed 25 LLM-powered agents in a simulated
+["Generative Agents: Interactive Simulacra of Human Behavior"](https://arxiv.org/abs/2304.03442) (Park et al.,
+UIST 2023) placed 25 LLM-powered agents in a simulated
 town (Smallville). Architecture: experience storage in natural language,
 memory synthesis into higher-level reflections, dynamic retrieval for
 behavior planning.
@@ -362,7 +362,7 @@ social interactions.
 **Gas Town relevance**: Gas Town polecats currently lack persistent memory
 across sessions (context dies with the session). The handoff mechanism
 (`gt handoff`) provides primitive memory transfer, but there's no reflection
-or synthesis. Adding agent memory and reflection could enable emergent
+or synthesis. Adding [agent memory](r3-agent-memory.md) and reflection could enable emergent
 coordination patterns beyond explicit formula steps.
 
 
@@ -449,7 +449,8 @@ optimal strategy depends on:
 
 Gas City should not assume "more agents = better." It should dynamically
 select coordination strategy based on task structure, using the predictive
-framework from the scaling science research.
+framework from the scaling science research. See also [S1: Gap Analysis](s1-gap-analysis.md)
+and [S3: Architecture Sketch](s3-architecture-sketch.md) for how these patterns inform the design.
 
 
 ## Sources
@@ -469,4 +470,6 @@ framework from the scaling science research.
 - [ANTS 2026: International Conference on Swarm Intelligence](https://ants2026.org/)
 - [Multi-Agent Coordination Patterns: Architectures Beyond the Hype](https://medium.com/@ohusiev_6834/multi-agent-coordination-patterns-architectures-beyond-the-hype-3f61847e4f86)
 - [Agentic Mesh: Revolutionizing Distributed AI Systems](https://medium.com/@visrow/agentic-mesh-revolutionizing-distributed-ai-systems-in-the-agentic-ecosystem-1062d036769a)
+- [LLM-based Data Marketplace Simulation](https://arxiv.org/abs/2511.13233) (arXiv, 2025)
+- [Google A2A Protocol Announcement](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/)
 - [The Confluence of Evolutionary Computation and Multi-Agent Systems](https://www.ieee-jas.net/article/doi/10.1109/JAS.2025.125246) (IEEE JAS, 2025)

@@ -1,7 +1,7 @@
 # S3: Architecture Sketch — What Gas City Adds
 
 **Bead**: gt-5km | **Date**: 2026-03-08 | **Author**: polecat/imperator
-**Sources**: S1 (Gap Analysis), S2 (Abstraction Map), R1-R6 (Phase 1 Research)
+**Sources**: [S1](s1-gap-analysis.md) (Gap Analysis), [S2](s2-abstraction-map.md) (Abstraction Map), R1-R6 (Phase 1 Research)
 
 ---
 
@@ -37,7 +37,7 @@ incremental adoption, not migration.
 ### 1.2 The Inverted Cost Model
 
 Gas City's reactive computation operates under an inverted cost structure
-(R2 §4):
+([R2](r2-reactive-dataflow.md) §4):
 
 | Operation | Traditional reactive | Gas City |
 |-----------|---------------------|----------|
@@ -161,7 +161,7 @@ evaluate(evaluator, inputs):
     return result
 ```
 
-This mirrors Adapton's approach (R2): dependencies are recorded, not
+This mirrors [Adapton](https://github.com/Adapton/adapton.rust)'s approach ([R2](r2-reactive-dataflow.md)): dependencies are recorded, not
 declared.
 
 ### 2.2 Computation DAGs (Reactive Molecules)
@@ -468,7 +468,7 @@ to calibrate thresholds.
 
 ## 5. Layer 4: Protocol Membrane (Deferred — Design Only)
 
-This layer is deferred per S2's recommendation. Included here as a design
+This layer is deferred per [S2](s2-abstraction-map.md)'s recommendation. Included here as a design
 sketch for future reference.
 
 ### 5.1 Outbound: Agent Cards
@@ -786,7 +786,7 @@ processes. The learning pipeline (reflections, crystals) provides
 continuity without persistence. The state lives in Dolt, not in agents.
 
 **Rationale**: Ephemeral agents avoid memory corruption, identity drift,
-and resource leaks (S1 §3.5). Better models don't fix these problems —
+and resource leaks ([S1](s1-gap-analysis.md) §3.5). Better models don't fix these problems —
 they're architectural.
 
 ### 9.2 No Vector Store
@@ -802,7 +802,7 @@ better, not to add infrastructure.
 ### 9.3 No Agent Market (Deferred)
 
 Central dispatch (Mayor assigns work) continues unchanged. Self-selection
-and market-based coordination are deferred per S2 analysis — not justified
+and market-based coordination are deferred per [S2](s2-abstraction-map.md) analysis — not justified
 at current fleet scale (<10 polecats).
 
 ### 9.4 No MCP/A2A Integration (Deferred)
@@ -871,11 +871,11 @@ stopped by cutoff, preventing unnecessary LLM calls.
 
 ## Sources
 
-- S1: Gap Analysis — Gas Town vs Frontier (gt-026)
-- S2: Abstraction Map — Candidate City-Level Abstractions (gt-w6q)
-- R1: Orchestration Frontier Survey (gt-eth)
-- R2: Reactive Dataflow and Incremental Computation (gt-m9z)
-- R3: Agent Memory and Identity (gt-0g1)
-- R4: Tool Ecosystems and MCP Evolution (gt-xm8)
-- R5: Production Agent Deployments (gt-36n)
-- R6: Emergent Computation and Self-Organization (gt-djy)
+- [S1](s1-gap-analysis.md): Gap Analysis — Gas Town vs Frontier (gt-026)
+- [S2](s2-abstraction-map.md): Abstraction Map — Candidate City-Level Abstractions (gt-w6q)
+- [R1](r1-orchestration-frontier.md): Orchestration Frontier Survey (gt-eth)
+- [R2](r2-reactive-dataflow.md): Reactive Dataflow and Incremental Computation (gt-m9z)
+- [R3](r3-agent-memory.md): Agent Memory and Identity (gt-0g1)
+- [R4](r4-tool-ecosystems.md): Tool Ecosystems and MCP Evolution (gt-xm8)
+- [R5](r5-production-deployments.md): Production Agent Deployments (gt-36n)
+- [R6](r6-emergent-computation.md): Emergent Computation and Self-Organization (gt-djy)
