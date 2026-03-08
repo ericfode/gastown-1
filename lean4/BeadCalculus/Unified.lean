@@ -33,7 +33,7 @@ structure Value where
   content    : String
   version    : Nat
   stale      : Bool          -- True if an upstream cell changed since computation
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 /-- The state of a cell: the evaluation lifecycle. -/
 inductive CellState where
@@ -42,7 +42,7 @@ inductive CellState where
   | computing : (last : Option Value) → CellState  -- LLM is working on it
   | fresh     : (val : Value) → CellState          -- Computed and up to date
   | failed    : (err : String) → (last : Option Value) → CellState
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 /-- A bead spreadsheet. -/
 structure Sheet where
