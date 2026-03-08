@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gas City Information Sankey</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-primary: #0a0c10;
+    --bg-secondary: #12151c;
+    --bg-tertiary: #1a1e28;
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --text-primary: #e8eaf0;
+    --text-secondary: #8b90a0;
+    --text-muted: #555a6e;
+    --accent-blue: #4a9eff;
+    --accent-cyan: #36d6c8;
+    --accent-orange: #ff8a4a;
+    --accent-red: #ff5a6a;
+    --accent-purple: #a78bfa;
+    --glow-blue: rgba(74, 158, 255, 0.15);
+    --glow-cyan: rgba(54, 214, 200, 0.12);
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grain overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 48px 40px;
+    position: relative;
+  }
+
+  /* Header */
+  .header {
+    margin-bottom: 48px;
+    animation: fadeUp 0.6s ease-out;
+  }
+
+  .header-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent-cyan);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header-tag::before {
+    content: '';
+    width: 24px;
+    height: 1px;
+    background: var(--accent-cyan);
+  }
+
+  .header h1 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+
+  .header p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin-top: 10px;
+    max-width: 600px;
+    line-height: 1.6;
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    gap: 32px;
+    padding: 20px 28px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    margin-bottom: 40px;
+    animation: fadeUp 0.6s ease-out 0.1s both;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .stat-value .unit {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    margin-left: 2px;
+  }
+
+  .stat-value.highlight {
+    color: var(--accent-cyan);
+  }
+
+  .stat-value.ratio {
+    color: var(--accent-orange);
+  }
+
+  .stat-divider {
+    width: 1px;
+    background: var(--border-subtle);
+    align-self: stretch;
+  }
+
+  /* Sankey container */
+  .sankey-container {
+    position: relative;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    padding: 32px;
+    animation: fadeUp 0.6s ease-out 0.2s both;
+    overflow: visible;
+  }
+
+  .sankey-container::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 60px;
+    right: 60px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+    opacity: 0.3;
+  }
+
+  #sankey-chart {
+    width: 100%;
+    overflow: visible;
+  }
+
+  /* Sankey node styling */
+  .sankey-node rect {
+    cursor: pointer;
+    transition: filter 0.2s ease, opacity 0.2s ease;
+    rx: 4;
+    ry: 4;
+  }
+
+  .sankey-node:hover rect {
+    filter: brightness(1.3) drop-shadow(0 0 12px currentColor);
+  }
+
+  .sankey-node text {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    fill: var(--text-primary);
+    pointer-events: none;
+  }
+
+  .sankey-node .node-tokens {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    fill: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  /* Sankey link styling */
+  .sankey-link {
+    fill: none;
+    stroke-opacity: 0.25;
+    cursor: pointer;
+    transition: stroke-opacity 0.2s ease;
+  }
+
+  .sankey-link:hover {
+    stroke-opacity: 0.55;
+  }
+
+  /* Highlight states */
+  .sankey-node.dimmed rect { opacity: 0.15; }
+  .sankey-node.dimmed text { opacity: 0.2; }
+  .sankey-node.dimmed .node-tokens { opacity: 0.2; }
+  .sankey-link.dimmed { stroke-opacity: 0.04; }
+  .sankey-link.highlighted { stroke-opacity: 0.7; }
+  .sankey-node.highlighted rect {
+    filter: brightness(1.2) drop-shadow(0 0 16px currentColor);
+  }
+
+  /* Bottleneck pulse */
+  .bottleneck-indicator {
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.9; }
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: #1c2030;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 13px;
+    color: var(--text-primary);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.03),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(20px);
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  .tooltip.visible { opacity: 1; }
+
+  .tooltip-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tooltip-title .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 3px 0;
+  }
+
+  .tooltip-row .label {
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .tooltip-row .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--text-primary);
+    text-align: right;
+  }
+
+  .tooltip-divider {
+    height: 1px;
+    background: var(--border-subtle);
+    margin: 8px 0;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    margin-top: 24px;
+    animation: fadeUp 0.6s ease-out 0.3s both;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+
+  /* Instructions */
+  .instructions {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    animation: fadeUp 0.6s ease-out 0.4s both;
+  }
+
+  .instructions kbd {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Flow animation */
+  @keyframes flowDash {
+    to { stroke-dashoffset: -20; }
+  }
+
+  .sankey-link.highlighted {
+    stroke-dasharray: 6, 4;
+    animation: flowDash 0.8s linear infinite;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header class="header">
+    <div class="header-tag">Gas City / Information Flow</div>
+    <h1>Information Sankey</h1>
+    <p>Token compression through the bead pipeline. Watch 47,000 tokens narrow to 500 as information is extracted, summarized, and distilled into a decision.</p>
+  </header>
+
+  <div class="stats-bar">
+    <div class="stat">
+      <span class="stat-label">Input</span>
+      <span class="stat-value">47,000<span class="unit"> tok</span></span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-label">Output</span>
+      <span class="stat-value highlight">500<span class="unit"> tok</span></span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-label">Total Compression</span>
+      <span class="stat-value ratio">94:1</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-label">Pipeline Stages</span>
+      <span class="stat-value">5</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-label">Bottleneck</span>
+      <span class="stat-value" style="color: var(--accent-red);">source-code<span class="unit"> (9:1)</span></span>
+    </div>
+  </div>
+
+  <div class="sankey-container">
+    <svg id="sankey-chart"></svg>
+  </div>
+
+  <div class="legend" id="legend"></div>
+  <div class="instructions">
+    <kbd>Hover</kbd> nodes or flows for details &nbsp;&middot;&nbsp; <kbd>Click</kbd> a node to trace upstream flows &nbsp;&middot;&nbsp; <kbd>Click</kbd> background to reset
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+(function() {
+  // ── Data ──────────────────────────────────────────────
+  const nodes = [
+    { id: 'source-code',     label: 'source-code',     tokens: 47000, depth: 0, compressionRatio: null,  policy: 'raw input' },
+    { id: 'extract-types',   label: 'extract-types',   tokens: 5200,  depth: 1, compressionRatio: '9:1', policy: 'extract' },
+    { id: 'find-patterns',   label: 'find-patterns',   tokens: 8100,  depth: 1, compressionRatio: null,  policy: 'summarize' },
+    { id: 'synthesize',      label: 'synthesize',      tokens: 3200,  depth: 2, compressionRatio: null,  policy: 'extract + summarize' },
+    { id: 'decision',        label: 'decision',        tokens: 500,   depth: 3, compressionRatio: '6:1', policy: 'decide' },
+  ];
+
+  const links = [
+    { source: 'source-code',   target: 'extract-types', value: 47000, compression: 'extract',   ratio: '9:1' },
+    { source: 'extract-types', target: 'find-patterns', value: 5200,  compression: 'summarize', ratio: '1.6:1' },
+    { source: 'extract-types', target: 'synthesize',    value: 5200,  compression: 'summarize', ratio: '1.6:1' },
+    { source: 'find-patterns', target: 'synthesize',    value: 8100,  compression: 'extract',   ratio: '2.5:1' },
+    { source: 'synthesize',    target: 'decision',      value: 3200,  compression: 'decide',    ratio: '6:1' },
+  ];
+
+  // ── Color scale by depth ──────────────────────────────
+  const depthColors = [
+    '#4a9eff',  // 0 - blue (raw)
+    '#7c6ff7',  // 1 - purple
+    '#c06af0',  // 2 - magenta
+    '#ff5a6a',  // 3 - red (heavily compressed)
+  ];
+
+  function nodeColor(depth) { return depthColors[Math.min(depth, depthColors.length - 1)]; }
+
+  // ── Layout ────────────────────────────────────────────
+  const margin = { top: 40, right: 180, bottom: 40, left: 180 };
+  const container = document.querySelector('.sankey-container');
+  const containerWidth = container.clientWidth - 64; // padding
+  const width = containerWidth;
+  const height = 420;
+
+  const svg = d3.select('#sankey-chart')
+    .attr('width', width)
+    .attr('height', height + margin.top + margin.bottom)
+    .append('g')
+    .attr('transform', `translate(0, ${margin.top})`);
+
+  // ── Sankey generator ──────────────────────────────────
+  const sankey = d3.sankey()
+    .nodeId(d => d.id)
+    .nodeWidth(20)
+    .nodePadding(40)
+    .nodeAlign(d3.sankeyLeft)
+    .extent([[margin.left, 0], [width - margin.right, height]]);
+
+  const graph = sankey({
+    nodes: nodes.map(d => ({ ...d })),
+    links: links.map(d => ({ ...d }))
+  });
+
+  // ── Draw links ────────────────────────────────────────
+  const linkGroup = svg.append('g').attr('class', 'links');
+
+  const linkPaths = linkGroup.selectAll('.sankey-link')
+    .data(graph.links)
+    .join('path')
+    .attr('class', 'sankey-link')
+    .attr('d', d3.sankeyLinkHorizontal())
+    .attr('stroke', d => nodeColor(d.source.depth))
+    .attr('stroke-width', d => Math.max(2, d.width))
+    .on('mouseenter', onLinkHover)
+    .on('mousemove', moveTooltip)
+    .on('mouseleave', hideTooltip);
+
+  // ── Draw nodes ────────────────────────────────────────
+  const nodeGroup = svg.append('g').attr('class', 'nodes');
+
+  const nodeGs = nodeGroup.selectAll('.sankey-node')
+    .data(graph.nodes)
+    .join('g')
+    .attr('class', 'sankey-node')
+    .attr('transform', d => `translate(${d.x0}, ${d.y0})`)
+    .on('mouseenter', onNodeHover)
+    .on('mousemove', moveTooltip)
+    .on('mouseleave', hideTooltip)
+    .on('click', onNodeClick);
+
+  // Node rectangles
+  nodeGs.append('rect')
+    .attr('width', d => d.x1 - d.x0)
+    .attr('height', d => d.y1 - d.y0)
+    .attr('fill', d => nodeColor(d.depth))
+    .style('color', d => nodeColor(d.depth));
+
+  // Glow behind nodes
+  nodeGs.insert('rect', ':first-child')
+    .attr('width', d => d.x1 - d.x0 + 16)
+    .attr('height', d => d.y1 - d.y0 + 16)
+    .attr('x', -8)
+    .attr('y', -8)
+    .attr('rx', 10)
+    .attr('fill', d => nodeColor(d.depth))
+    .attr('opacity', 0.08)
+    .attr('filter', 'blur(8px)');
+
+  // Node labels (right side for left nodes, left side for right nodes)
+  nodeGs.append('text')
+    .attr('x', d => d.x0 < width / 2 ? (d.x1 - d.x0) + 12 : -12)
+    .attr('y', d => (d.y1 - d.y0) / 2)
+    .attr('dy', '-0.3em')
+    .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+    .attr('font-size', '13px')
+    .text(d => d.label);
+
+  // Token count below label
+  nodeGs.append('text')
+    .attr('class', 'node-tokens')
+    .attr('x', d => d.x0 < width / 2 ? (d.x1 - d.x0) + 12 : -12)
+    .attr('y', d => (d.y1 - d.y0) / 2)
+    .attr('dy', '1em')
+    .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+    .text(d => formatTokens(d.tokens) + ' tokens');
+
+  // ── Bottleneck indicator ──────────────────────────────
+  // source-code → extract-types has the highest ratio (9:1)
+  const bottleneckNode = graph.nodes.find(n => n.id === 'source-code');
+  if (bottleneckNode) {
+    const bnGroup = svg.append('g')
+      .attr('class', 'bottleneck-indicator')
+      .attr('transform', `translate(${bottleneckNode.x0 + (bottleneckNode.x1 - bottleneckNode.x0) / 2}, ${bottleneckNode.y0 - 18})`);
+
+    bnGroup.append('circle')
+      .attr('r', 5)
+      .attr('fill', 'var(--accent-red)')
+      .attr('opacity', 0.8);
+
+    bnGroup.append('text')
+      .attr('y', -12)
+      .attr('text-anchor', 'middle')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .attr('font-size', '9px')
+      .attr('fill', 'var(--accent-red)')
+      .attr('letter-spacing', '1px')
+      .text('BOTTLENECK');
+  }
+
+  // ── Legend ────────────────────────────────────────────
+  const legendEl = document.getElementById('legend');
+  const legendItems = [
+    { label: 'Raw (depth 0)', color: depthColors[0] },
+    { label: 'Extracted (depth 1)', color: depthColors[1] },
+    { label: 'Synthesized (depth 2)', color: depthColors[2] },
+    { label: 'Decision (depth 3)', color: depthColors[3] },
+  ];
+
+  legendItems.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'legend-item';
+    el.innerHTML = `<span class="legend-swatch" style="background:${item.color}"></span>${item.label}`;
+    legendEl.appendChild(el);
+  });
+
+  // ── Tooltip ──────────────────────────────────────────
+  const tooltip = document.getElementById('tooltip');
+
+  function onNodeHover(event, d) {
+    const tokensIn = d.targetLinks.reduce((s, l) => s + l.value, 0) || d.tokens;
+    const tokensOut = d.sourceLinks.reduce((s, l) => s + l.value, 0) || d.tokens;
+    const color = nodeColor(d.depth);
+
+    let html = `
+      <div class="tooltip-title"><span class="dot" style="background:${color}"></span>${d.label}</div>
+      <div class="tooltip-row"><span class="label">Tokens</span><span class="value">${formatTokens(d.tokens)}</span></div>
+      <div class="tooltip-row"><span class="label">Compression depth</span><span class="value">${d.depth}</span></div>
+      <div class="tooltip-row"><span class="label">Policy</span><span class="value">${d.policy}</span></div>`;
+
+    if (d.compressionRatio) {
+      html += `<div class="tooltip-divider"></div>
+      <div class="tooltip-row"><span class="label">Compression ratio</span><span class="value" style="color:var(--accent-orange)">${d.compressionRatio}</span></div>`;
+    }
+
+    if (d.targetLinks.length > 0) {
+      html += `<div class="tooltip-divider"></div>
+      <div class="tooltip-row"><span class="label">Tokens in</span><span class="value">${formatTokens(tokensIn)}</span></div>`;
+    }
+    if (d.sourceLinks.length > 0) {
+      html += `<div class="tooltip-row"><span class="label">Tokens out</span><span class="value">${formatTokens(tokensOut)}</span></div>`;
+    }
+
+    tooltip.innerHTML = html;
+    tooltip.classList.add('visible');
+  }
+
+  function onLinkHover(event, d) {
+    const color = nodeColor(d.source.depth);
+    const html = `
+      <div class="tooltip-title"><span class="dot" style="background:${color}"></span>${d.source.label} &rarr; ${d.target.label}</div>
+      <div class="tooltip-row"><span class="label">Tokens transferred</span><span class="value">${formatTokens(d.value)}</span></div>
+      <div class="tooltip-row"><span class="label">Compression type</span><span class="value">${d.compression}</span></div>
+      <div class="tooltip-row"><span class="label">Compression ratio</span><span class="value" style="color:var(--accent-orange)">${d.ratio}</span></div>`;
+
+    tooltip.innerHTML = html;
+    tooltip.classList.add('visible');
+  }
+
+  function moveTooltip(event) {
+    const pad = 16;
+    let x = event.clientX + pad;
+    let y = event.clientY + pad;
+    const rect = tooltip.getBoundingClientRect();
+    if (x + rect.width > window.innerWidth - pad) x = event.clientX - rect.width - pad;
+    if (y + rect.height > window.innerHeight - pad) y = event.clientY - rect.height - pad;
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+  }
+
+  function hideTooltip() {
+    tooltip.classList.remove('visible');
+  }
+
+  // ── Click: trace upstream ────────────────────────────
+  let activeNode = null;
+
+  function onNodeClick(event, d) {
+    event.stopPropagation();
+
+    if (activeNode === d.id) {
+      resetHighlight();
+      activeNode = null;
+      return;
+    }
+
+    activeNode = d.id;
+
+    // Find all upstream nodes and links
+    const upstreamNodes = new Set();
+    const upstreamLinks = new Set();
+    traceUpstream(d, upstreamNodes, upstreamLinks);
+    upstreamNodes.add(d.id);
+
+    // Apply highlight/dim classes
+    nodeGs
+      .classed('highlighted', n => upstreamNodes.has(n.id))
+      .classed('dimmed', n => !upstreamNodes.has(n.id));
+
+    linkPaths
+      .classed('highlighted', l => upstreamLinks.has(l.index))
+      .classed('dimmed', l => !upstreamLinks.has(l.index));
+  }
+
+  function traceUpstream(node, visitedNodes, visitedLinks) {
+    node.targetLinks.forEach(link => {
+      visitedLinks.add(link.index);
+      const srcId = link.source.id;
+      if (!visitedNodes.has(srcId)) {
+        visitedNodes.add(srcId);
+        traceUpstream(link.source, visitedNodes, visitedLinks);
+      }
+    });
+  }
+
+  function resetHighlight() {
+    activeNode = null;
+    nodeGs.classed('highlighted', false).classed('dimmed', false);
+    linkPaths.classed('highlighted', false).classed('dimmed', false);
+  }
+
+  // Click background to reset
+  d3.select('#sankey-chart').on('click', resetHighlight);
+
+  // ── Entrance animation ───────────────────────────────
+  linkPaths
+    .attr('stroke-dasharray', function() { return this.getTotalLength() + ' ' + this.getTotalLength(); })
+    .attr('stroke-dashoffset', function() { return this.getTotalLength(); })
+    .transition()
+    .duration(1200)
+    .delay((d, i) => 200 + i * 150)
+    .ease(d3.easeCubicOut)
+    .attr('stroke-dashoffset', 0)
+    .on('end', function() {
+      d3.select(this).attr('stroke-dasharray', null);
+    });
+
+  nodeGs
+    .attr('opacity', 0)
+    .transition()
+    .duration(500)
+    .delay((d, i) => i * 120)
+    .attr('opacity', 1);
+
+  // ── Helpers ──────────────────────────────────────────
+  function formatTokens(n) {
+    if (n >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k';
+    return n.toString();
+  }
+})();
+</script>
+</body>
+</html>
