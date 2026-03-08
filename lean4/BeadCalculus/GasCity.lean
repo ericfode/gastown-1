@@ -785,7 +785,219 @@ example :
     trace.links.length = 1 := by rfl
 
 -- ═══════════════════════════════════════════════════════════════
--- SECTION 10: What Gas City Actually Is
+-- SECTION 10: Pinned Cells — Freeze Panes for Debugging
+-- ═══════════════════════════════════════════════════════════════
+
+/-! "Pin" a cell's value so it resists recomputation. This enables controlled
+    experiments: manually set a cell's output and recompute downstream to
+    isolate where problems occur. The analogue in spreadsheets is "paste as
+    values" — replacing a formula with a literal so upstream changes stop
+    flowing through. -/
+
+/-- Whether a cell's value is pinned (frozen) or free to recompute. -/
+inductive PinState where
+  | unpinned : PinState
+  | pinned   : (value : String) → PinState
+  deriving DecidableEq, Repr, BEq
+
+/-- A sheet augmented with per-cell pin state.
+    Pins override evaluation: a pinned cell always returns its pinned value. -/
+structure PinnedSheet where
+  sheet : Unified.Sheet
+  pins  : String → PinState
+
+/-- The effective state of a cell: if pinned, return the pinned value as fresh;
+    otherwise return the real state from the underlying sheet. -/
+def PinnedSheet.effectiveState (ps : PinnedSheet) (cellName : String) : Unified.CellState :=
+  match ps.pins cellName with
+  | .pinned v => .fresh { content := v, version := 0, stale := false }
+  | .unpinned => ps.sheet.states cellName
+
+/-- Evaluate a cell with pin awareness: pinned cells are skipped entirely.
+    Unpinned cells evaluate normally. -/
+def PinnedSheet.evaluateWithPins (ps : PinnedSheet) (cellName content : String) : PinnedSheet :=
+  match ps.pins cellName with
+  | .pinned _ => ps  -- Pinned: do not recompute
+  | .unpinned => { ps with sheet := ps.sheet.evaluate cellName content }
+
+/-- Pinning blocks evaluation: evaluating a pinned cell does not change
+    its effective state — the pin holds. -/
+theorem pin_blocks_evaluation (ps : PinnedSheet) (cellName content : String) (v : String)
+    (h_pin : ps.pins cellName = .pinned v) :
+    (ps.evaluateWithPins cellName content).effectiveState cellName
+      = ps.effectiveState cellName := by
+  simp only [PinnedSheet.evaluateWithPins, h_pin, PinnedSheet.effectiveState]
+
+/-- Removing a pin restores the cell to its real state from the underlying sheet. -/
+theorem unpin_restores_state (ps : PinnedSheet) (cellName : String)
+    (h_unpin : ps.pins cellName = .unpinned) :
+    ps.effectiveState cellName = ps.sheet.states cellName := by
+  simp only [PinnedSheet.effectiveState, h_unpin]
+
+/-- Non-vacuity: pinning and evaluating on the demo sheet. -/
+example :
+    let ps : PinnedSheet := {
+      sheet := demoSheet.evaluate "analyze" "Real value"
+      pins := fun n => if n == "analyze" then .pinned "Frozen value" else .unpinned
+    }
+    -- Evaluating a pinned cell returns the pin, not the new content
+    (ps.evaluateWithPins "analyze" "New value").effectiveState "analyze"
+      = Unified.CellState.fresh { content := "Frozen value", version := 0, stale := false } := by
+  native_decide
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 11: Input Snapshots — What Did This Cell See?
+-- ═══════════════════════════════════════════════════════════════
+
+/-! The Skeptic's critique: there is no input provenance per cell. When cell 15
+    was computed, which versions of upstream cells were consumed? Without this,
+    debugging is guesswork. "Your synthesis is wrong" — was it wrong because
+    the analysis was stale, or because the prompt was bad?
+
+    We formalize input snapshots: a record of exactly which upstream versions
+    a cell consumed at the time of computation. -/
+
+/-- A snapshot of what a cell saw when it was computed:
+    for each upstream reference, the version number at compute time. -/
+structure InputSnapshot where
+  cellName      : String
+  inputVersions : List (String × Nat)  -- (ref cell name, version at compute time)
+  deriving Repr, BEq, DecidableEq
+
+/-- A computation record: what was produced, from what inputs. -/
+structure ComputationRecord where
+  cellName      : String
+  snapshot      : InputSnapshot
+  outputVersion : Nat
+  content       : String
+  deriving Repr, BEq, DecidableEq
+
+/-- An execution log: the ordered history of all computations. -/
+def ExecutionLog := List ComputationRecord
+
+/-- Extract the version from a cell's current state. Returns 0 for non-fresh cells. -/
+private def versionOf (s : Unified.Sheet) (cellName : String) : Nat :=
+  match s.states cellName with
+  | .fresh v => v.version
+  | .stale v => v.version
+  | _ => 0
+
+/-- Evaluate a cell and produce a computation record capturing input versions.
+    Returns the updated sheet and the log entry. -/
+def evaluateWithLog (s : Unified.Sheet) (cellName content : String)
+    : Unified.Sheet × ComputationRecord :=
+  let cell? := s.cells.find? (·.name = cellName)
+  let inputVersions := match cell? with
+    | some c => c.refs.map fun ref => (ref.cell, versionOf s ref.cell)
+    | none => []
+  let snapshot : InputSnapshot := { cellName, inputVersions }
+  let s' := s.evaluate cellName content
+  let outputVersion := versionOf s' cellName
+  let record : ComputationRecord := {
+    cellName, snapshot, outputVersion, content
+  }
+  (s', record)
+
+/-- The snapshot in the log matches the actual input versions at compute time.
+    This is stated as: the input versions recorded in the snapshot equal the
+    versions that were present in the sheet at the moment of evaluation. -/
+theorem log_captures_inputs (s : Unified.Sheet) (cellName content : String)
+    (c : Unified.Cell)
+    (h_find : s.cells.find? (·.name = cellName) = some c) :
+    (evaluateWithLog s cellName content).2.snapshot.inputVersions
+      = c.refs.map (fun ref => (ref.cell, versionOf s ref.cell)) := by
+  simp only [evaluateWithLog, h_find]
+
+/-- Non-vacuity: evaluating with log on the demo sheet captures upstream versions. -/
+example :
+    let s := demoSheet.evaluate "analyze" "Found 5 types"
+    let (_, record) := evaluateWithLog s "synthesize" "Algebra found"
+    record.snapshot.inputVersions = [("analyze", 1)] := by
+  native_decide
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 12: Recomputation Policy — What To Do About Staleness
+-- ═══════════════════════════════════════════════════════════════
+
+/-! The Skeptic's hardest critique: staleness detection is easy, policy is hard.
+    Once we know cell 15 is stale, what do we DO? Recompute immediately? Wait?
+    Ask a human? It depends on cost, urgency, and confidence.
+
+    This section formalizes recomputation strategies as first-class data,
+    so the engine can reason about WHEN to recompute, not just WHETHER. -/
+
+/-- A recomputation policy: what to do when a cell becomes stale. -/
+inductive RecomputePolicy where
+  | eager                          -- Recompute immediately when stale
+  | lazy                           -- Mark stale, wait for explicit trigger
+  | budgeted   (maxTokens : Nat)   -- Recompute only if estimated cost fits budget
+  | convergent (maxRounds : Nat)   -- Recompute up to N times, stop if output stabilizes
+  | gated                          -- Require human approval before recompute
+  deriving Repr, BEq, DecidableEq
+
+/-- The decision made by applying a policy. -/
+inductive RecomputeDecision where
+  | recompute       -- Go ahead, recompute now
+  | skip            -- Do not recompute (not needed or round limit reached)
+  | askHuman        -- Escalate: require human approval
+  | budgetExceeded  -- Would recompute, but cost is too high
+  deriving Repr, BEq, DecidableEq
+
+/-- Apply a recomputation policy given:
+    - The policy for this cell
+    - The estimated token cost of recomputation
+    - How many times this cell has been recomputed in the current round -/
+def applyPolicy (policy : RecomputePolicy) (estimatedCost : Nat) (roundCount : Nat)
+    : RecomputeDecision :=
+  match policy with
+  | .eager          => .recompute
+  | .lazy           => .skip
+  | .budgeted max   => if estimatedCost ≤ max then .recompute else .budgetExceeded
+  | .convergent max => if roundCount < max then .recompute else .skip
+  | .gated          => .askHuman
+
+/-- Eager policy always recomputes, regardless of cost or round count. -/
+theorem eager_always_recomputes (cost rounds : Nat) :
+    applyPolicy .eager cost rounds = .recompute := by
+  rfl
+
+/-- Budgeted policy returns .budgetExceeded when cost exceeds the budget. -/
+theorem budgeted_respects_limit (max cost rounds : Nat) (h : cost > max) :
+    applyPolicy (.budgeted max) cost rounds = .budgetExceeded := by
+  unfold applyPolicy
+  have : ¬ (cost ≤ max) := by omega
+  simp [this]
+
+/-- Convergent policy returns .skip when round count reaches or exceeds maxRounds. -/
+theorem convergent_stops (max rounds : Nat) (h : rounds ≥ max) :
+    applyPolicy (.convergent max) 0 rounds = .skip := by
+  unfold applyPolicy
+  have : ¬ (rounds < max) := by omega
+  simp [this]
+
+/-- Non-vacuity: eager always recomputes. -/
+example : applyPolicy .eager 99999 100 = .recompute := by rfl
+
+/-- Non-vacuity: lazy always skips. -/
+example : applyPolicy .lazy 0 0 = .skip := by rfl
+
+/-- Non-vacuity: budgeted approves when under budget. -/
+example : applyPolicy (.budgeted 5000) 3000 0 = .recompute := by rfl
+
+/-- Non-vacuity: budgeted rejects when over budget. -/
+example : applyPolicy (.budgeted 5000) 8000 0 = .budgetExceeded := by rfl
+
+/-- Non-vacuity: convergent recomputes when rounds remain. -/
+example : applyPolicy (.convergent 3) 0 1 = .recompute := by rfl
+
+/-- Non-vacuity: convergent stops when rounds exhausted. -/
+example : applyPolicy (.convergent 3) 0 3 = .skip := by rfl
+
+/-- Non-vacuity: gated always asks a human. -/
+example : applyPolicy .gated 0 0 = .askHuman := by rfl
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 13: What Gas City Actually Is
 -- ═══════════════════════════════════════════════════════════════
 
 /-!
