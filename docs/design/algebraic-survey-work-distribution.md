@@ -2,8 +2,10 @@
 
 **Subsystem**: Work Distribution
 **Packages**: `formula`, `convoy`, `feed`, `scheduler/capacity`, `session`
+**Orchestration**: `cmd/sling*`, `cmd/capacity_dispatch`
 **Purpose**: Decides WHO does WHAT — formulas define workflow templates, convoys batch
 work, feed curates dispatch events, scheduler manages capacity, sessions execute work.
+The sling command is the universal dispatcher that orchestrates all these packages.
 
 ## 1. Subsystem Overview
 
@@ -520,22 +522,554 @@ StaleReasonForTimes(messageTime, sessionCreated) =
 
 ---
 
-## 7. Cross-Package Algebraic Structure
+## 7. The Sling Command: Universal Dispatcher
+
+**Files**: sling.go, sling_target.go, sling_dispatch.go, sling_formula.go,
+sling_convoy.go, sling_batch.go, sling_schedule.go, sling_validate.go,
+sling_helpers.go, sling_idempotency.go, sling_dog.go
+
+The sling command (`gt sling`) is the **single entry point** for all work dispatch
+in Gas Town. It unifies bead-to-agent assignment, formula instantiation, convoy
+creation, and capacity scheduling into one command with multiple dispatch paths.
+
+### 7.1 Dispatch Mode Algebra
+
+The first-arg determines the dispatch mode via a **priority-ordered type test**:
+
+```
+ClassifyFirstArg : String → DispatchMode
+ClassifyFirstArg(arg) =
+  if verifyBeadExists(arg)    then BeadMode(arg)
+  else if verifyFormulaExists(arg) then FormulaMode(arg)
+  else if looksLikeBeadID(arg)     then BeadMode(arg)  -- routing fallback
+  else Error("not a valid bead or formula")
+```
+
+The full dispatch decision tree (within `runSling`) branches on:
+
+```
+(numArgs, isDeferred, hasOnFlag, lastArgIsRig, allArgsAreBeadIDs, idType)
+```
+
+```
+                          runSling(args)
+                               │
+                    ┌──────────┴──────────┐
+                 len > 2              len ≤ 2
+                    │                     │
+          ┌────────┴────────┐     ┌───────┴───────┐
+       lastIsRig         allBeads  len=2         len=1
+          │                │         │              │
+    ┌─────┴─────┐     autoResolve  ┌─┴─┐      ┌────┴────┐
+  deferred   direct     Rig       rig  2-bead  epic/    task
+    │           │                   │   auto    convoy
+ batchSched batchSling           ┌─┴─┐         │        │
+                               def  dir      auto     ┌──┴──┐
+                                │    │       detect   def   dir
+                             schedule │               │      │
+                                   singleSling     sched  self/formula
+```
+
+Dispatch modes:
+
+| Mode | Condition | Path |
+|------|-----------|------|
+| Batch sling | `len > 2 ∧ lastIsRig ∧ ¬deferred` | `runBatchSling` |
+| Batch schedule | `len > 2 ∧ lastIsRig ∧ deferred` | `runBatchSchedule` |
+| Batch auto-resolve | `len > 2 ∧ allBeadIDs ∧ ¬lastIsRig` | `resolveRigFromBeadIDs → runBatchSling` |
+| Deferred single | `len=2 ∧ lastIsRig ∧ deferred` | `scheduleBead` |
+| Deferred formula-on-bead | `deferred ∧ --on ∧ lastIsRig` | `scheduleBead` |
+| Epic/convoy auto-detect | `len=1 ∧ idType ∈ {epic, convoy}` | `runConvoySling/runEpicSling` |
+| Standalone formula | `len≥1 ∧ verifyFormula(arg)` | `runSlingFormula` |
+| Single bead | default | `runSling` (inline) |
+
+### 7.2 Target Resolution Algebra
+
+Target resolution converts a user-provided string to `(agentID, pane, workDir)`.
+It is a **sum type dispatch** with fallback:
+
+```
+TargetSpec = Self | Dog DogName | Rig RigName | ExistingAgent AgentPath
+
+resolveTarget : String → ResolvedTarget × Error
+resolveTarget(target) =
+  case target of
+    "" | "." → resolveSelfTarget()          -- Self
+    _ | IsDogTarget(target) → DispatchToDog(...)    -- Dog
+    _ | IsRigName(target)   → spawnPolecatForSling(...)  -- Rig (spawn)
+    _  → resolveTargetAgent(target)         -- Existing agent
+         |> on error, if isPolecatTarget → spawnPolecatForSling  -- Dead polecat fallback
+```
+
+The target types form a **lattice of specificity**:
+
+```
+       Self (.)
+         │
+    ┌────┴────┐
+   Dog      Rig (auto-spawn)
+    │         │
+  Named    Named Polecat (rig/polecats/name)
+  Dog        │
+           ┌─┴──┐
+         Crew  Witness/Refinery
+```
+
+#### Self-Sling Identity
+
+Self-sling builds the agent ID from the current role environment:
+
+```
+resolveSelfTarget : () → (AgentID × Pane × WorkDir) × Error
+resolveSelfTarget() =
+  let role = GetRole()
+  let agentID = case role.Role of
+    Mayor    → "mayor/"
+    Deacon   → "deacon/"
+    Boot     → "deacon/boot"
+    Witness  → "{rig}/witness"
+    Refinery → "{rig}/refinery"
+    Polecat  → "{rig}/polecats/{name}"
+    Crew     → "{rig}/crew/{name}"
+  (agentID, $TMUX_PANE, role.Home)
+```
+
+#### Dog Target Resolution
+
+```
+IsDogTarget : String → (DogName × Bool)
+IsDogTarget(t) =
+  case lowercase(t) of
+    "deacon/dogs" | "dog:" → ("", true)     -- Pool dispatch
+    "dog:{name}"           → (name, true)   -- Named dispatch
+    "deacon/dogs/{name}"   → (name, true)   -- Path dispatch
+    _                      → ("", false)
+```
+
+Dog dispatch has **pool semantics**: when no name is given, find an idle dog
+or auto-create one up to `maxDogPoolSize = 4`.
+
+#### Rig Target Guard Algebra
+
+Before spawning into a rig, three guards are checked:
+
+```
+RigDispatchGuard(target, beadID, force) ≡
+    ¬isRigParked(target)           -- Rig must not be parked
+  ∧ ¬isRigDocked(target)           -- Rig must not be docked
+  ∧ (force ∨ prefixMatchesRig(beadID, target))  -- Cross-rig guard
+```
+
+The cross-rig guard ensures bead prefixes route to the correct rig:
+
+```
+checkCrossRigGuard : BeadID × TargetPath × TownRoot → Error
+checkCrossRigGuard(beadID, target, townRoot) =
+  let prefix = ExtractPrefix(beadID)
+  let beadRig = GetRigNameForPrefix(townRoot, prefix)
+  let targetRig = extractRig(target)
+  if beadRig ≠ "" ∧ beadRig ≠ targetRig then Error("prefix mismatch")
+  else nil
+```
+
+### 7.3 Target Validation (Pre-Resolution)
+
+`ValidateTarget` is a **syntactic pre-filter** that catches malformed targets
+before `resolveTarget` can trigger side-effects (like polecat spawning):
+
+```
+ValidateTarget : String → Error
+ValidateTarget(target) =
+  if target = "" ∨ target = "." then nil                 -- Self always valid
+  if ¬contains(target, "/") then nil                      -- No slash = rig/shortcut
+  let parts = split(target, "/")
+  reject if ∃ i. parts[i] = ""                           -- Empty segments
+  if parts[0] = "deacon" then nil                         -- Dog paths valid
+  if parts[0] = "mayor" ∧ len > 1 then Error             -- Mayor has no sub-agents
+  if parts[1] ∈ knownRoles then roleSpecificCheck(parts)  -- Role constraints
+  if len > 2 ∧ parts[1] ∉ knownRoles then Error           -- Unknown deep path
+  else nil                                                -- Shorthand, let resolver handle
+```
+
+Role-specific constraints:
+
+| Role | Max Depth | Requires Name? |
+|------|-----------|----------------|
+| witness | 2 | No (singleton) |
+| refinery | 2 | No (singleton) |
+| polecats | 3 | Yes |
+| crew | 3 | Yes |
+
+### 7.4 Idempotent Sling Detection
+
+```
+matchesSlingTarget : Target × Assignee × SelfAgent → Bool
+matchesSlingTarget(target, assignee, self) =
+  let a = normalize(assignee)
+  if a = "" then false
+  case target of
+    "" | "." → normalize(self) = a                        -- Self-match
+    t       → normalize(t) = a                            -- Exact match
+            ∨ (¬contains(t, "/") ∧ startsWith(a, t+"/polecats/"))  -- Rig subsumption
+
+  -- NOT matched (intentionally):
+  --   Two-segment shorthand (ambiguous: crew vs polecat)
+  --   Pool targets like "deacon/dogs" (means "any idle", not "keep current")
+```
+
+The idempotency check runs **after** dead-agent detection but **before** the
+"already hooked" error, so a dead agent with matching target re-slings rather
+than no-oping.
+
+### 7.5 Single-Bead Dispatch (runSling)
+
+The single-bead path is the most complex, handling all target types and
+formula-on-bead scenarios. The 12-step execution for `executeSling`:
+
+```
+executeSling : SlingParams → SlingResult × Error
+executeSling(p) =
+  0. Guard: rig not parked/docked
+  1. Fetch bead info; guard closed/tombstone/deferred
+  2. Auto-force if hooked agent is dead; send LIFECYCLE:Shutdown if force-stealing
+  3. Burn stale molecules (if formula + force/stale)
+  4. Spawn polecat: spawnPolecatForSling(rig, opts)
+  5. Auto-convoy: createAutoConvoy(beadID, title, owned, merge) if ¬NoConvoy
+  6. Cook formula: CookFormula(name, workDir, townRoot) if ¬SkipCook
+  7. Instantiate formula on bead: wisp + bond
+  8. Hook bead with retry: hookBeadWithRetry(beadToHook, agent, hookDir)
+  9. Log sling event to feed
+  10. Update agent hook_bead state
+  11. Store fields in bead (dispatcher, args, attached_molecule, no_merge, mode)
+  12. Start polecat session: spawnInfo.StartSession()
+```
+
+**Rollback semantics**: If any step after spawn (4) fails, the spawned polecat
+is cleaned up via `rollbackSlingArtifactsFn` or `cleanupSpawnedPolecat`, which
+removes the worktree, agent bead, git branch, and auto-convoy.
+
+### 7.6 Formula Instantiation
+
+Two formula dispatch paths exist:
+
+**Standalone formula** (`runSlingFormula`):
+```
+1. resolveTarget(target)        → agent, pane, workDir
+2. CookFormula(name)            → ensure proto exists
+3. bd mol wisp <formula> --json → create wisp instance (ephemeral)
+4. hookBeadWithRetry(wispID)    → attach wisp to hook
+5. storeFieldsInBead(wispID)    → dispatcher, args, attached_formula
+6. StartSession / NudgePane     → activate agent
+```
+
+**Formula-on-bead** (`InstantiateFormulaOnBead` via `executeSling`):
+```
+1. CookFormula(name)
+2. bd mol wisp <formula> --on <beadID> --json → wisp bonded to work bead
+3. beadToHook = wispRootID (not the original bead)
+4. attachedMoleculeID stored in bead fields
+```
+
+The formula resolution function:
+
+```
+resolveFormula : ExplicitFlag × HookRawBead → FormulaName
+resolveFormula(explicit, raw) =
+  if raw  then ""                    -- No formula
+  if explicit ≠ "" then explicit     -- User override
+  else "mol-polecat-work"            -- Default
+```
+
+### 7.7 Convoy Tracking Algebra
+
+#### Auto-Convoy Creation
+
+```
+createAutoConvoy : BeadID × Title × Owned × MergeStrategy → ConvoyID × Error
+createAutoConvoy(beadID, title, owned, merge) =
+  guard ¬IsFlagLikeTitle(title)                         -- Safety
+  let convoyID = "hq-cv-" ++ randomShortID()            -- 5-char random
+  let convoyTitle = "Work: " ++ title
+  let description = SetConvoyFields(prose, {merge})
+  bd create --type=convoy --id=convoyID ...              -- Create convoy bead
+  bd dep add convoyID beadID --type=tracks               -- Track relation
+  if tracksFailed then bd close convoyID                 -- Cleanup orphan
+```
+
+#### Convoy Lookup (Triple Strategy)
+
+```
+isTrackedByConvoy : BeadID → ConvoyID
+isTrackedByConvoy(beadID) =
+  -- Strategy 1: Dependency lookup (authoritative when cross-rig works)
+  deps ← bd dep list beadID --direction=up --type=tracks
+  if ∃ d ∈ deps. d.IssueType = "convoy" ∧ d.Status = "open" then d.ID
+
+  -- Strategy 2: Description pattern matching (robust fallback)
+  convoys ← bd list --type=convoy --status=open
+  if ∃ c ∈ convoys. c.Description contains "tracking {beadID}" then c.ID
+
+  -- Strategy 3: Forward dependency scan (manual convoy fallback)
+  for c ∈ convoys:
+    tracked ← bd dep list c.ID --direction=down --type=tracks
+    if beadID ∈ tracked.IDs ∨ "external:*:{beadID}" ∈ tracked.IDs then c.ID
+```
+
+#### Batch Convoy
+
+```
+createBatchConvoy : List BeadID × RigName × Owned × Merge → (ConvoyID × List BeadID) × Error
+createBatchConvoy(beadIDs, rig, owned, merge) =
+  let convoyTitle = "Batch: {n} beads to {rig}"
+  create convoy bead
+  for beadID ∈ beadIDs:
+    result ← bd dep add convoyID beadID --type=tracks
+    if success then tracked ← tracked ++ [beadID]       -- Partial success OK
+  return (convoyID, tracked)
+```
+
+#### Convoy Info Model
+
+```
+ConvoyInfo { ID: String, Owned: Bool, MergeStrategy: String }
+
+IsOwnedDirect(c) ≡ c ≠ nil ∧ c.Owned ∧ c.MergeStrategy = "direct"
+
+MergeStrategy = "direct" | "mr" | "local" | ""
+-- "direct": push branch to main (skip refinery)
+-- "mr":     merge queue via refinery (default)
+-- "local":  keep on feature branch
+```
+
+Two lookup methods, with **issue-embedded fields as primary**:
+1. `getConvoyInfoFromIssue(issueID)` — reads convoy_id/merge_strategy from bead description
+2. `getConvoyInfoForIssue(issueID)` — dependency-based lookup (cross-rig, slower)
+
+### 7.8 Batch Dispatch
+
+```
+runBatchSling : List BeadID × RigName × BeadsDir → Error
+runBatchSling(beadIDs, rig, _) =
+  -- Phase 1: Validate all beads exist (fail-fast before any spawn)
+  for id ∈ beadIDs: verifyBeadExists(id) or Error
+
+  -- Phase 2: Cross-rig guard (all beads must match target rig)
+  for id ∈ beadIDs: checkCrossRigGuard(id, rig) or Error
+
+  -- Phase 3: Pre-cook formula once (batch optimization)
+  formulaCooked ← CookFormula(formula, workDir, townRoot) succeeds
+
+  -- Phase 4: Sequential dispatch with throttling
+  for (i, beadID) ∈ enumerate(beadIDs):
+    if maxConcurrent > 0 ∧ active ≥ maxConcurrent then wait(cooldown)
+    result ← executeSling({beadID, rig, formulaCooked, ...})
+    sleep(2s) between spawns                             -- Dolt contention avoidance
+
+  -- Phase 5: Wake rig agents (once, post-loop)
+  wakeRigAgents(rig)
+```
+
+**Batch auto-resolve** (no explicit rig):
+
+```
+resolveRigFromBeadIDs : List BeadID × TownRoot → RigName × Error
+resolveRigFromBeadIDs(ids, root) =
+  for id ∈ ids:
+    let prefix = ExtractPrefix(id)
+    let rig = GetRigNameForPrefix(root, prefix)
+    guard prefix ≠ "" ∧ rig ≠ ""                        -- Must resolve
+    guard rig = resolvedRig ∨ resolvedRig = ""           -- Must all agree
+  return resolvedRig
+```
+
+**Invariant**: All beads in a batch must resolve to the **same** rig.
+
+### 7.9 Deferred Dispatch (Scheduler Integration)
+
+When `scheduler.max_polecats > 0`, sling enqueues rather than dispatching directly.
+
+```
+shouldDeferDispatch : () → Bool × Error
+shouldDeferDispatch() =
+  let settings = LoadTownSettings()
+  let maxPol = settings.Scheduler.GetMaxPolecats()
+  maxPol > 0
+
+scheduleBead : BeadID × RigName × ScheduleOptions → Error
+scheduleBead(beadID, rig, opts) =
+  -- Idempotency: check for existing open sling context
+  if FindOpenSlingContext(beadID) ≠ nil then no-op
+
+  -- Guard: status, force, formula
+  guard status ∉ {closed, tombstone, deferred}
+  guard ¬(hooked ∨ in_progress) ∨ force
+
+  -- Create sling context bead (atomic, no two-step write)
+  fields = SlingContextFields{version=1, workBeadID, targetRig, formula, args, ...}
+  ctxBead ← CreateSlingContext(title, beadID, fields)
+
+  -- Auto-convoy (same as direct path)
+  createAutoConvoy(beadID, ...) unless --no-convoy
+```
+
+**Sling context lifecycle**:
+
+```
+              ┌───────────┐
+              │   open    │ ← CreateSlingContext
+              └─────┬─────┘
+                    │ dispatch cycle
+              ┌─────┴─────┐
+              │ dispatched │ ← CloseSlingContext("dispatched")
+              └───────────┘
+
+  Error paths:
+    open → circuit-broken   (DispatchFailures ≥ 3)
+    open → stale-work-bead  (work bead hooked/closed/tombstone)
+    open → invalid-context  (unparseable description)
+```
+
+**Sling context TTL**: Contexts older than 30 minutes are ignored by
+`areScheduled()` to prevent orphaned contexts from permanently blocking tasks.
+
+### 7.10 Capacity Dispatch Cycle (Orchestrator)
+
+The daemon/CLI dispatch loop wires up the generic `DispatchCycle`:
+
+```
+dispatchScheduledWork : TownRoot × Actor × BatchOverride × DryRun → Nat × Error
+dispatchScheduledWork(townRoot, actor, batch, dry) =
+  -- Serialize: flock("scheduler-dispatch.lock")
+  -- Check: scheduler not paused, max_polecats > 0
+
+  -- Clean stale contexts BEFORE querying ready
+  cleanupStaleContexts(townRoot)
+
+  -- Wire dispatch cycle callbacks
+  cycle = DispatchCycle {
+    AvailableCapacity = maxPolecats - countActivePolecats()
+    QueryPending      = getReadySlingContexts(townRoot)
+    Execute           = dispatchSingleBead → executeSling
+    OnSuccess         = CloseSlingContext("dispatched")
+    OnFailure         = recordDispatchFailure (increment counter, circuit-break at 3)
+    BatchSize, SpawnDelay
+  }
+
+  report ← cycle.Run()
+  wakeRigAgents(each successful rig)
+  updateSchedulerState(report.Dispatched)
+```
+
+**Ready context query** (`getReadySlingContexts`):
+
+```
+getReadySlingContexts : TownRoot → List PendingBead × Error
+getReadySlingContexts(root) =
+  1. contexts ← ListOpenSlingContexts() from HQ       -- Authoritative
+  2. readyIDs ← bd ready across all rig dirs           -- Cross-rig readiness
+  3. sort(contexts, by=EnqueuedAt ASC, ID ASC)         -- Deterministic order
+  4. deduplicate by WorkBeadID (oldest context wins)
+  5. filter: fields ≠ nil ∧ failures < 3 ∧ workBead ∈ readyIDs
+```
+
+### 7.11 Concurrency Control
+
+The sling command uses a **three-layer locking strategy**:
+
+```
+Layer 1: Per-bead flock     — tryAcquireSlingBeadLock(townRoot, beadID)
+  Prevents concurrent sling of the same bead (TOCTOU races).
+  Both runSling and executeSling acquire this lock independently.
+
+Layer 2: Dispatch lock      — flock("scheduler-dispatch.lock")
+  Prevents concurrent dispatch cycles from the daemon and CLI.
+
+Layer 3: Dolt auto-commit   — BD_DOLT_AUTO_COMMIT=off during sling
+  Prevents manifest contention under concurrent load.
+  Individual BdCmd calls use WithAutoCommit() for critical writes
+  (convoy creation, dep adds) that must persist.
+```
+
+### 7.12 Safety Invariants
+
+**1. Status guard (non-bypassable)**:
+```
+¬Slingable(bead) ≡ bead.Status ∈ {closed, tombstone}
+-- Cannot be overridden with --force. Must reopen first.
+```
+
+**2. Deferred guard (force-gated)**:
+```
+DeferredGuard(bead, force) ≡ isDeferredBead(bead) ∧ ¬force
+-- Prevents deferred work from consuming polecat slots.
+```
+
+**3. Dead-agent auto-force**:
+```
+AutoForce(bead) ≡ bead.Status ∈ {hooked, in_progress}
+                 ∧ bead.Assignee ≠ ""
+                 ∧ isHookedAgentDead(bead.Assignee)
+-- Automatically force-slings when the current assignee's session is dead.
+-- Sends LIFECYCLE:Shutdown to witness for zombie cleanup.
+```
+
+**4. Explicit force vs auto-force distinction**:
+```
+-- executeSling tracks explicitForce separately from params.Force.
+-- Dead-agent auto-force sets params.Force=true but NOT explicitForce.
+-- DeferredGuard checks explicitForce, preventing auto-force from bypassing it.
+```
+
+**5. Flag-like title guard**:
+```
+¬IsFlagLikeTitle(title)
+-- Rejects garbage beads created by flag-parsing bugs to prevent dispatch loops.
+```
+
+**6. Rollback guarantee**:
+```
+∀ step ∈ {5..12}: step fails → rollbackSlingArtifacts(spawnInfo, beadID, workDir, convoyID)
+-- Cleans up: worktree, agent bead, git branch, auto-convoy.
+-- No orphaned polecats from failed dispatch.
+```
+
+### 7.13 Lean 4 Formalization Candidates
+
+1. **Target resolution exhaustiveness**: Every valid target string resolves to
+   exactly one of {Self, Dog, Rig, ExistingAgent}
+2. **Idempotent sling**: `matchesSlingTarget(t, a, s) → sling(t) is no-op`
+3. **Cross-rig guard correctness**: `checkCrossRigGuard passes ↔ prefixOf(bead) routes to targetRig`
+4. **Batch rig homogeneity**: `resolveRigFromBeadIDs succeeds → ∀ i j. rigOf(ids[i]) = rigOf(ids[j])`
+5. **Sling context deduplication**: After dedup, at most one context per WorkBeadID
+6. **Rollback completeness**: If executeSling fails after spawn, no artifacts remain
+7. **Auto-force does not bypass deferred**: `AutoForce ∧ ¬explicitForce → DeferredGuard still holds`
+8. **ValidateTarget is conservative**: `ValidateTarget(t) = nil → resolveTarget(t) may still fail,
+   but ValidateTarget(t) = Error → resolveTarget(t) would have produced incorrect side-effects`
+9. **Convoy lookup convergence**: All three lookup strategies return the same convoy
+   (or a superset) when cross-rig routing is healthy
+10. **Dispatch conservation**: In batch sling, `succeeded + failed = |beadIDs|`
+
+---
+
+## 8. Cross-Package Algebraic Structure
 
 ### The Work Distribution Pipeline
 
-Though the packages don't import each other directly, they form a conceptual pipeline
-orchestrated by cmd/, daemon/, and polecat/:
+The five internal packages share no direct imports but are composed into a pipeline
+by the sling command (§7) and daemon orchestration:
 
 ```
-1. Formula.Parse(toml)           → Formula (workflow template)
-2. Formula.TopologicalSort()     → ordered steps
-3. Formula.ReadySteps(completed) → dispatchable steps
-4. Scheduler.PlanDispatch(cap, batch, ready) → DispatchPlan
-5. Scheduler.DispatchCycle.Run() → DispatchReport
-6. Session.StartSession(config)  → running polecat
-7. Convoy.CheckConvoysForIssue() → reactive dispatch on completion
-8. Feed.Curator.processLine()    → curated event record
+1. Sling.runSling(args)                  → dispatch mode selection
+2. Sling.resolveTarget(target)           → agent + pane + workDir
+3. Formula.Parse(toml)                   → Formula (workflow template)
+4. Formula.TopologicalSort()             → ordered steps
+5. Formula.ReadySteps(completed)         → dispatchable steps
+6. Sling.executeSling(params)            → spawn + cook + wisp + hook
+7. Scheduler.PlanDispatch(cap, batch, ready) → DispatchPlan
+8. Scheduler.DispatchCycle.Run()         → DispatchReport
+9. Session.StartSession(config)          → running polecat
+10. Convoy.CheckConvoysForIssue()        → reactive dispatch on completion
+11. Feed.Curator.processLine()           → curated event record
 ```
 
 ### Shared Algebraic Patterns
@@ -595,7 +1129,7 @@ The composition `Formula → ... → Event` is the full work distribution pipeli
 
 ---
 
-## 8. Summary: Formalization Priority
+## 9. Summary: Formalization Priority
 
 ### High Priority (rich algebraic structure, clear invariants)
 
@@ -604,11 +1138,14 @@ The composition `Formula → ... → Event` is the full work distribution pipeli
 | formula | DAG scheduling (TopologicalSort, ReadySteps) | Classic graph theory, Kahn's algorithm correctness |
 | scheduler | Capacity-bounded dispatch (PlanDispatch, Run) | Conservation law, capacity constraints |
 | convoy | Readiness predicate and blocking relation | Monotonicity, fail-open safety |
+| sling | Target resolution + rollback completeness | Sum-type exhaustiveness, transactional safety |
 
 ### Medium Priority (simpler structure, fewer invariants)
 
 | Package | Target | Why |
 |---------|--------|-----|
+| sling | Idempotent sling detection | Equivalence classes on target strings |
+| sling | Cross-rig guard correctness | Prefix-to-rig bijection preservation |
 | feed | Dedup/aggregation correctness | Temporal window properties |
 | session | Identity isomorphisms, registry bijectivity | Algebraic data type round-trips |
 
@@ -618,3 +1155,7 @@ The composition `Formula → ... → Event` is the full work distribution pipeli
 2. **Dispatch is monotone**: Closing a dependency can only increase the set of ready items
 3. **Pipeline composition preserves ordering**: Topological order from formula is respected by scheduler dispatch
 4. **Fail-open never causes false dispatch**: Storage errors lead to skipping, not spurious execution
+5. **Target resolution is total on valid inputs**: Every syntactically valid target (per ValidateTarget) resolves to exactly one dispatch path
+6. **Rollback is complete**: Failed dispatch after polecat spawn leaves no orphaned artifacts
+7. **Deferred dispatch subsumes direct**: scheduleBead stores the same SlingParams that executeSling consumes (via ReconstructFromContext), ensuring behavioral equivalence
+8. **Auto-force is safe**: Dead-agent auto-force enables re-sling without bypassing deferred/status guards
