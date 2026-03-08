@@ -359,6 +359,64 @@ func TestCompleteInvalidState(t *testing.T) {
 	}
 }
 
+func TestInputSnapshot(t *testing.T) {
+	// a -> b, a -> c -> d
+	s := Init("test", []Cell{
+		{Name: "a", Prompt: "root"},
+		{Name: "b", Prompt: "use {{a}}", Refs: []Ref{{Cell: "a"}}},
+		{Name: "c", Prompt: "use {{a}}", Refs: []Ref{{Cell: "a"}}},
+		{Name: "d", Prompt: "use {{b}} and {{c}}", Refs: []Ref{{Cell: "b"}, {Cell: "c"}}},
+	})
+
+	_ = s.Evaluate("a", "va")
+	_ = s.Evaluate("b", "vb")
+	_ = s.Evaluate("c", "vc")
+	_ = s.Evaluate("d", "vd")
+
+	snap := s.GetInputSnapshot("d")
+	if snap == nil {
+		t.Fatal("expected non-nil snapshot for d")
+	}
+	if snap["b"] != 1 || snap["c"] != 1 {
+		t.Errorf("snapshot = %v, want {b:1, c:1}", snap)
+	}
+
+	// After re-evaluating a, b becomes stale and re-evaluates as v2.
+	s.states["a"].State = StateStale
+	_ = s.Evaluate("a", "va2")
+	_ = s.Evaluate("b", "vb2")
+
+	snap = s.GetInputSnapshot("b")
+	if snap["a"] != 2 {
+		t.Errorf("b snapshot = %v, want {a:2}", snap)
+	}
+}
+
+func TestTotalEffect(t *testing.T) {
+	cells := []Cell{
+		{Name: "extract", ExpectedEffect: &FullEffect{
+			Cost:       Effect{Tokens: 5000, Quality: QualityGood},
+			Distortion: Distortion{Retention: 60, Sensitivity: 1},
+		}},
+		{Name: "synth", ExpectedEffect: &FullEffect{
+			Cost:       Effect{Tokens: 12000, Quality: QualityExcellent},
+			Distortion: Distortion{Retention: 80, Sensitivity: 2},
+		}},
+	}
+	s := Init("test", cells)
+	total := s.TotalEffect()
+
+	if total.Cost.Tokens != 17000 {
+		t.Errorf("total tokens = %d, want 17000", total.Cost.Tokens)
+	}
+	if total.Cost.Quality != QualityGood {
+		t.Errorf("total quality = %s, want good", total.Cost.Quality)
+	}
+	if total.Distortion.Retention != 48 {
+		t.Errorf("total retention = %d, want 48", total.Distortion.Retention)
+	}
+}
+
 func TestUnknownCell(t *testing.T) {
 	s := Init("test", []Cell{{Name: "a", Prompt: "hello"}})
 	if s.Ready("nonexistent") {

@@ -78,6 +78,9 @@ type Cell struct {
 	Type     CellType // Kind of cell.
 	Prompt   string   // Template string with {{ref}} placeholders.
 	Refs     []Ref    // Explicit upstream dependencies.
+
+	// Effect tracking (Gas City Sections 1, 14).
+	ExpectedEffect *FullEffect // Predicted cost and distortion. Nil = unknown.
 }
 
 // Value holds the computed content of a cell.
@@ -117,4 +120,10 @@ type cellEntry struct {
 	State     CellState
 	Value     *Value // nil when empty; holds last value in stale/computing/failed states.
 	LastError error  // Non-nil only in failed state.
+
+	// Observed effect from the last evaluation.
+	ObservedEffect *FullEffect
+
+	// Input snapshot: which upstream versions were consumed.
+	InputSnapshot map[string]int // cell name -> version consumed.
 }
