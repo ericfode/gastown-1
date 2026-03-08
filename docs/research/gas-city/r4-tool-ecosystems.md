@@ -8,9 +8,9 @@
 ## Executive Summary
 
 The agent tool ecosystem has undergone rapid standardization since late 2024. Three
-complementary protocol layers have emerged: **MCP** (tool access), **A2A** (agent
+complementary protocol layers have emerged: **[MCP](https://modelcontextprotocol.io/)** (tool access), **[A2A](https://google.github.io/A2A/)** (agent
 coordination), and **Skills** (capability packaging). These are converging under the
-**Agentic AI Foundation (AAIF)** hosted by the Linux Foundation. The central question
+**[Agentic AI Foundation (AAIF)](https://www.linuxfoundation.org/press/linux-foundation-forms-agentic-ai-foundation)** hosted by the Linux Foundation. The central question
 for Gas Town: how to position within this stack.
 
 ---
@@ -21,11 +21,11 @@ for Gas Town: how to position within this stack.
 
 | Date | Version | Key Changes |
 |------|---------|-------------|
-| Nov 2024 | Initial | Anthropic open-sources MCP |
-| Jun 2025 | 2025-06-18 | Structured tool outputs, OAuth auth, elicitation, JSON-RPC batching removed |
+| Nov 2024 | Initial | [Anthropic open-sources MCP](https://www.anthropic.com/news/model-context-protocol) |
+| Jun 2025 | [2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18) | Structured tool outputs, OAuth auth, elicitation, JSON-RPC batching removed |
 | Sep 2025 | — | MCP Registry preview launched |
-| Nov 2025 | 2025-11-25 | Tasks primitive (async/long-running), OAuth 2.1, SEP governance process |
-| Dec 2025 | — | MCP donated to AAIF under Linux Foundation |
+| Nov 2025 | [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) | Tasks primitive (async/long-running), [OAuth 2.1](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1), SEP governance process |
+| Dec 2025 | — | [MCP donated to AAIF](https://www.linuxfoundation.org/press/linux-foundation-forms-agentic-ai-foundation) under Linux Foundation |
 | Mar 2026 | Current | 97M+ monthly SDK downloads, 10,000+ active servers |
 
 ### Key Architectural Shifts
@@ -42,8 +42,8 @@ interactive workflows where tools need human decisions mid-execution.
 long-running tasks that return handles, publish progress updates, and deliver
 results asynchronously. This moves MCP from synchronous RPC into workflow territory.
 
-**OAuth 2.1 Authorization** (Nov 2025): Protected Resource Metadata discovery plus
-OpenID Connect for authorization server resolution. Enables enterprise deployment
+**[OAuth 2.1](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1) Authorization** (Nov 2025): Protected Resource Metadata discovery plus
+[OpenID Connect](https://openid.net/developers/how-connect-works/) for authorization server resolution. Enables enterprise deployment
 where tools have real access control, not just API keys.
 
 **SEP Governance** (Nov 2025): Specification Enhancement Proposals provide a formal
@@ -67,11 +67,11 @@ February 2026.
 - 97 million monthly SDK downloads
 - 10,000+ active MCP servers
 - First-class client support across all major AI platforms
-- 17,000+ servers indexed on MCP.so alone
+- 17,000+ servers indexed on [MCP.so](https://mcp.so) alone
 
 ---
 
-## 2. A2A Protocol (Google)
+## 2. [A2A Protocol](https://google.github.io/A2A/) (Google)
 
 ### What It Solves
 
@@ -81,7 +81,7 @@ coordination** (agent-to-agent). They are explicitly complementary, not competin
 ### Core Concepts
 
 - **Agent Cards**: JSON documents at `.well-known/agent-card.json` describing
-  capabilities, endpoints, and communication requirements. Registered with IANA
+  capabilities, endpoints, and communication requirements. Registered with [IANA](https://www.iana.org/assignments/well-known-uris/)
   in April 2025 — first AI-agent-specific well-known entry.
 - **Tasks**: Defined lifecycle (submitted, working, input-required, completed,
   failed, canceled) with streaming updates.
@@ -93,16 +93,17 @@ coordination** (agent-to-agent). They are explicitly complementary, not competin
 
 | Date | Event |
 |------|-------|
-| Apr 2025 | Google announces A2A with 50+ partners |
-| Jun 2025 | Linux Foundation launches A2A project, 100+ companies |
-| Aug 2025 | ACP (IBM) merges into A2A |
+| Apr 2025 | [Google announces A2A](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/) with 50+ partners |
+| Jun 2025 | [Linux Foundation launches A2A project](https://www.linuxfoundation.org/press/linux-foundation-launches-the-a2a-project), 100+ companies |
+| Aug 2025 | [ACP](https://github.com/i-am-bee/beeai/tree/main/acp) (IBM) merges into A2A |
 | Jan 2026 | A2A RC v1.0 |
 | Feb 2026 | A2A v0.3 with gRPC support, signed security cards |
 
 ### Enterprise Adoption
 
 S&P Global, ServiceNow (founding partner), and Twilio have adopted A2A for
-cross-platform agent communication.
+cross-platform agent communication. See [R5: Production Deployments](r5-production-deployments.md)
+for broader enterprise adoption patterns.
 
 ### Key Insight for Gas Town
 
@@ -115,7 +116,7 @@ Gas Town's bead lifecycle (open -> in_progress -> closed).
 
 ## 3. ACP -> A2A Merger
 
-IBM launched the Agent Communication Protocol (ACP) in March 2025 for its BeeAI
+IBM launched the Agent Communication Protocol (ACP) in March 2025 for its [BeeAI](https://github.com/i-am-bee/beeai)
 platform. ACP used standard HTTP conventions (cURL-compatible, no special
 libraries). In August 2025, ACP officially merged with A2A under the Linux
 Foundation, consolidating the agent-to-agent protocol space.
@@ -125,7 +126,7 @@ agent-to-agent standard, rather than fragmenting across competing protocols.
 
 ---
 
-## 4. ANP (Agent Network Protocol)
+## 4. [ANP](https://github.com/agent-network-protocol/agent-network-protocol) (Agent Network Protocol)
 
 ANP targets **decentralized, internet-scale** agent networks. Unlike A2A's
 client-server model, ANP enables peer-to-peer communications without central
@@ -140,8 +141,8 @@ compared to MCP/A2A.
 Gas Town's architecture is closer to ANP's vision than A2A's. The town is a
 self-organizing network of agents (mayor, witness, polecats, refinery) that
 discover work and coordinate without a central orchestrator dictating every
-interaction. However, Gas Town's current scope is single-machine, not
-internet-scale.
+interaction (see also [R6: Emergent Computation](r6-emergent-computation.md)).
+However, Gas Town's current scope is single-machine, not internet-scale.
 
 ---
 
@@ -149,7 +150,7 @@ internet-scale.
 
 ### The Skills Revolution (Jan-Feb 2026)
 
-Vercel launched **skills.sh** in January 2026 — a CLI and directory for
+Vercel launched **[skills.sh](https://skills.sh)** in January 2026 — a CLI and directory for
 installing agent skill packages. Think npm for agent capabilities.
 
 `npx skills add <package>` installs a skill to any supported agent.
@@ -158,7 +159,7 @@ installing agent skill packages. Think npm for agent capabilities.
 
 - 283,000+ skills on SkillsMP
 - 5,700+ on ClawHub
-- 17,000+ MCP servers on MCP.so
+- 17,000+ MCP servers on [MCP.so](https://mcp.so)
 - Growing at ~147 new skills/day
 - Supported by 30+ agents including Claude Code, Cursor, GitHub Copilot, Gemini
 
@@ -173,7 +174,7 @@ cross-agent compatible.
 
 ### Security Concerns
 
-A Snyk scan of the ClawHub registry found **7.1% of skills (283) leak API
+A [Snyk](https://snyk.io/) scan of the ClawHub registry found **7.1% of skills (283) leak API
 keys** — hardcoded credentials in source code that get copied into the user's
 environment. This is the npm left-pad moment for agent skills: the ecosystem
 is growing faster than security practices.
@@ -192,8 +193,8 @@ formula steps.
 
 ## 6. The AAIF: Governance Convergence
 
-The **Agentic AI Foundation (AAIF)**, formed December 2025 under the Linux
-Foundation, provides neutral governance for agent protocols.
+The **[Agentic AI Foundation (AAIF)](https://www.linuxfoundation.org/press/linux-foundation-forms-agentic-ai-foundation)**, formed December 2025 under the [Linux
+Foundation](https://www.linuxfoundation.org/), provides neutral governance for agent protocols.
 
 ### Founding Members
 
@@ -204,12 +205,12 @@ Google, Microsoft.
 
 | Project | Origin | Purpose |
 |---------|--------|---------|
-| MCP | Anthropic | Tool access protocol |
-| A2A | Google (+IBM ACP) | Agent-to-agent coordination |
-| goose | Block | Open-source agent framework |
-| AGENTS.md | OpenAI | Agent capability declaration |
-| BeeAI | IBM | Agent platform |
-| Docling | IBM | Document understanding |
+| [MCP](https://modelcontextprotocol.io/) | Anthropic | Tool access protocol |
+| [A2A](https://google.github.io/A2A/) | Google (+IBM ACP) | Agent-to-agent coordination |
+| [goose](https://github.com/block/goose) | Block | Open-source agent framework |
+| [AGENTS.md](https://github.com/anthropics/agents-spec) | OpenAI | Agent capability declaration |
+| [BeeAI](https://github.com/i-am-bee/beeai) | IBM | Agent platform |
+| [Docling](https://github.com/DS4SD/docling) | IBM | Document understanding |
 
 ### Significance
 
@@ -226,10 +227,10 @@ to agent quality, not connectivity.
 
 | Mechanism | Protocol | How It Works |
 |-----------|----------|-------------|
-| Agent Cards | A2A | `.well-known/agent-card.json` at known URLs |
-| MCP Registry | MCP | Centralized catalog with API |
-| Skills.sh | Skills | npm-style package registry |
-| AGENTS.md | OpenAI | Markdown file in repo root (convention) |
+| [Agent Cards](https://google.github.io/A2A/#/documentation?id=agent-card) | A2A | `.well-known/agent-card.json` at known URLs |
+| [MCP Registry](https://registry.modelcontextprotocol.io/) | MCP | Centralized catalog with API |
+| [Skills.sh](https://skills.sh) | Skills | npm-style package registry |
+| [AGENTS.md](https://github.com/anthropics/agents-spec) | OpenAI | Markdown file in repo root (convention) |
 | DNS/well-known | General | Standard web discovery patterns |
 
 ### The Discovery Stack
@@ -264,7 +265,8 @@ outputs (Jun 2025) made this reliable — typed JSON means no parsing ambiguity.
 **Parallel Fan-out**: Multiple tools invoked simultaneously for independent
 subtasks. Gas Town's polecat model is this pattern at the agent level.
 
-**Orchestrator Pattern**: A "puppeteer" agent coordinates specialist agents.
+**Orchestrator Pattern**: A "puppeteer" agent coordinates specialist agents
+(see [R1: Orchestration Frontier](r1-orchestration-frontier.md) for a survey).
 Gartner reports a 1,445% surge in multi-agent system inquiries (Q1 2024 to
 Q2 2025). This is Gas Town's mayor/witness/polecat architecture.
 
@@ -350,6 +352,8 @@ better search.
 
 ### What Gas Town Lacks
 
+(See also [S1: Gap Analysis](s1-gap-analysis.md) for a structured assessment.)
+
 1. **External interoperability**: No Agent Cards, no way for outside agents
    to discover or delegate to Gas Town polecats.
 2. **Standardized capability declaration**: Formulas are internal; no
@@ -362,6 +366,8 @@ better search.
    No peer-to-peer agent communication (ANP-style).
 
 ### Strategic Options
+
+(See [S3: Architecture Sketch](s3-architecture-sketch.md) for concrete designs.)
 
 **Option A: Expose Agent Cards** — Make polecats discoverable via A2A Agent
 Cards. External agents could delegate tasks to Gas Town rigs.
@@ -393,3 +399,39 @@ Gas Town operates primarily at Layers 2-3 with custom implementations.
 The industry is standardizing all layers under AAIF governance. The
 convergence opportunity is real but not urgent — Gas Town's internal
 protocols work. External interoperability is the gap.
+
+---
+
+## Cross-References
+
+- [R1: Orchestration Frontier](r1-orchestration-frontier.md) — Framework survey, orchestration patterns
+- [R2: Reactive Dataflow](r2-reactive-dataflow.md) — Event-driven architectures relevant to tool composition
+- [R3: Agent Memory](r3-agent-memory.md) — Persistent state across tool invocations
+- [R5: Production Deployments](r5-production-deployments.md) — Enterprise adoption of agent tooling
+- [R6: Emergent Computation](r6-emergent-computation.md) — Decentralized coordination (ANP-aligned)
+- [S1: Gap Analysis](s1-gap-analysis.md) — Gas Town's gaps vs. industry standards
+- [S2: Abstraction Map](s2-abstraction-map.md) — Candidate Gas City abstractions
+- [S3: Architecture Sketch](s3-architecture-sketch.md) — Concrete architecture for strategic options
+
+## References
+
+- [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
+- [MCP Specification — GitHub](https://github.com/modelcontextprotocol/specification)
+- [MCP Spec 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18)
+- [MCP Spec 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
+- [MCP Registry](https://registry.modelcontextprotocol.io/)
+- [MCP.so — Server Directory](https://mcp.so)
+- [Anthropic Announces MCP](https://www.anthropic.com/news/model-context-protocol)
+- [A2A Protocol — Google](https://google.github.io/A2A/)
+- [Google Announces A2A](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/)
+- [A2A Protocol — IBM Explainer](https://www.ibm.com/think/topics/agent2agent-protocol)
+- [ANP — Agent Network Protocol](https://github.com/agent-network-protocol/agent-network-protocol)
+- [Skills.sh — Agent Skills CLI](https://skills.sh)
+- [AGENTS.md Specification](https://github.com/anthropics/agents-spec)
+- [Agentic AI Foundation (AAIF) — Linux Foundation](https://www.linuxfoundation.org/press/linux-foundation-forms-agentic-ai-foundation)
+- [goose — Block](https://github.com/block/goose)
+- [BeeAI — IBM](https://github.com/i-am-bee/beeai)
+- [Docling — IBM](https://github.com/DS4SD/docling)
+- [OAuth 2.1 Draft](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1)
+- [Snyk — Security Platform](https://snyk.io/)
+- [IANA Well-Known URIs](https://www.iana.org/assignments/well-known-uris/)
