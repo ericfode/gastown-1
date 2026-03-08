@@ -57,7 +57,7 @@ The killer feature over beads: **cells have typed wires.** Not just "A depends o
 
 ### Hotkeys: The Operations I'd Use Every Day
 
-**Ctrl+R: Recompute Cell** — Force re-evaluation of a stale cell. Today I do this by creating a new bead, assigning it to a polecat, waiting for dispatch. In Gas City, I'd just hit recompute and the engine finds a capable agent, estimates cost, and dispatches.
+**Ctrl+R: Recompute Cell** — Force re-evaluation of a stale cell. Today I do this by creating a new bead, assigning it to a polecat, waiting for dispatch. In Gas City, I'd just hit recompute and the engine finds a capable agent and dispatches.
 
 **Ctrl+Shift+R: Recompute Stale Subtree** — Find all stale cells downstream of a change and recompute them in topological order. Today this is MANUAL. I have to trace the dependency graph myself, figure out the right order, dispatch each one. Gas City's reactive engine does this automatically because it knows the DAG and the staleness state.
 
@@ -75,11 +75,11 @@ In Excel, you name a range so formulas can reference it semantically. In Gas Cit
 
 ## 3. What Would Make Me 10x More Productive
 
-### 10x Factor #1: Predictive Cost Estimation
+### 10x Factor #1: Cost Visibility and Budgets
 
-Right now, dispatching work is a GAMBLE. I create a molecule with 8 steps, pour it, and hope it doesn't burn 500K tokens. I have zero visibility into cost until AFTER execution. The effect system in Gas City gives me `seq_cost` and `par_cost` BEFORE I dispatch. I can look at a formula and know: "This will cost ~45K tokens sequentially or ~20K tokens with parallelization, and the quality floor is `adequate` because step 3 uses a draft-tier model."
+Right now, dispatching work is a GAMBLE. I create a molecule with 8 steps, pour it, and hope it doesn't burn 500K tokens. I have zero visibility into cost until AFTER execution. The effect system in Gas City gives me `seq_cost` and `par_cost` as the molecule runs — I can watch token spend accumulate in real time and set hard caps. After a molecule completes, I see exactly what it cost. When I pour the same formula again, I have historical cost data from prior digests.
 
-This is the `VLOOKUP` equivalent: **given a formula and a set of agent capabilities, LOOK UP the predicted cost and quality.** Today I'm flying blind. Gas City gives me instrumentation.
+This is the `VLOOKUP` equivalent: **given a formula's digest chain, LOOK UP what it actually cost last time.** Today I'm flying blind. Gas City gives me instrumentation — not prediction, but measurement and history.
 
 ### 10x Factor #2: Automatic Dispatch via Type Matching
 
@@ -151,7 +151,7 @@ A spreadsheet IS this view. It IS the overview. Every cell, every value, every d
 
 Gas Town is assembly language. It works. I can coordinate agents with beads and molecules and mail. But I'm hand-coding `MOV` and `ADD` instructions when I should be writing in a high-level language.
 
-Gas City is that high-level language. Typed wires instead of untyped dependencies. Reactive staleness instead of manual timestamp checking. Predictive cost estimation instead of blind dispatch. Automatic type-directed dispatch instead of manual sling. Composition that carries data, not just ordering.
+Gas City is that high-level language. Typed wires instead of untyped dependencies. Reactive staleness instead of manual timestamp checking. Cost tracking and budget caps instead of blind dispatch. Automatic type-directed dispatch instead of manual sling. Composition that carries data, not just ordering.
 
 The Lean formalization isn't just math — it's a SPEC. It tells me exactly what properties the system guarantees: staleness propagates correctly (proven). Readiness is monotone (proven). Effects compose predictably (proven). Parallel execution is never slower than sequential (proven). These aren't aspirational — they're verified invariants.
 

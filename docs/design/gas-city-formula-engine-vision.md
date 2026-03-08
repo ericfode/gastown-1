@@ -260,10 +260,6 @@ lifecycle (pour/squash/distill) already exists in the bead formula system.
    synthesis doesn't need "excellent" quality. This reduces token budgets
    optimally.
 
-8. **Static Cost Scheduling** (SDF) — Cells declare estimated token rates. The
-   scheduler pre-computes total molecule cost before execution. Enables budget
-   verification at planning time.
-
 ---
 
 ## Design Principles
