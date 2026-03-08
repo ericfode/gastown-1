@@ -1053,169 +1053,67 @@ We need:
 -/
 
 -- ═══════════════════════════════════════════════════════════════
--- SECTION 14: Distortion Algebra — the Dual of Cost
+-- SECTION 14: Fidelity Preorder — Abstract Information Loss
 -- ═══════════════════════════════════════════════════════════════
 
-/-! Every LLM cell is a lossy channel. The Effect algebra tracks COST (tokens,
-    quality). The Distortion algebra tracks FIDELITY — how much information
-    survives each transformation.
+/-! Every LLM cell is a lossy channel. The Effect algebra (Section 1)
+    tracks COST. The fidelity preorder tracks INFORMATION LOSS — abstractly,
+    without fake precision about percentages or sensitivity multipliers.
 
-    Together they form the rate-distortion dual:
-      Cost says: "How much did this cost to compute?"
-      Distortion says: "How faithfully does this represent the original?"
+    The honest mathematical content:
+    1. Fidelity has a preorder (reflexive, transitive ≤)
+    2. Sequential composition is monotone decreasing (Data Processing Inequality)
+    3. Parallel composition is monotone increasing (best path)
+    4. There is a top element (lossless)
 
-    The Information Theorist identified this gap: "The algebra is
-    information-theoretically sound in its foundations but incomplete in
-    its accounting — it tracks cost but not distortion."
+    No named levels. No percentages. No sensitivity multipliers.
+    Just the abstract shape of how fidelity composes through a DAG.
 
-    Tao named the structure: "A functor from the DAG category into
-    the poset of distortion levels, contravariant in quality."
+    Fidelity is DECOUPLED from cost. The Effect algebra handles cost
+    accounting; this preorder handles information-loss ordering. They
+    compose independently through the DAG. -/
 
-    The key insight: distortion ACCUMULATES through the pipeline.
-    If cell A distorts 20% and cell B distorts 30%, the composed
-    distortion is at least 44% (1 - 0.8 * 0.7), not 50% (additive).
-    Distortion composes multiplicatively via retention, not additively. -/
+/-- Abstract fidelity preorder with sequential and parallel composition.
+    Captures the algebraic structure of how information loss composes
+    through a DAG of lossy channels. -/
+class FidelityAlgebra (F : Type) where
+  /-- Fidelity ordering: a ≤ b means "a is at most as faithful as b." -/
+  le : F → F → Prop
+  /-- Reflexivity of fidelity ordering. -/
+  le_refl : ∀ (a : F), le a a
+  /-- Transitivity of fidelity ordering. -/
+  le_trans : ∀ (a b c : F), le a b → le b c → le a c
+  /-- Top element: lossless fidelity (identity channel). -/
+  top : F
+  /-- Sequential composition: pipeline two lossy channels. -/
+  seq : F → F → F
+  /-- Parallel composition: best-of-two paths. -/
+  par : F → F → F
+  /-- Top is the greatest element. -/
+  le_top : ∀ (a : F), le a top
+  /-- Data Processing Inequality: sequential composition can only lose fidelity.
+      Passing through a lossy channel never increases fidelity. -/
+  dpi : ∀ (a b : F), le (seq a b) a
+  /-- Parallel improvement: having an alternative path can only help.
+      The best of two paths is at least as good as either alone. -/
+  par_le_left : ∀ (a b : F), le a (par a b)
+  /-- Top is left identity for sequential composition. -/
+  seq_top : ∀ (a : F), seq top a = a
 
-/-- Distortion level of a single cell's transformation.
-    retention is a percentage (0-100) of information preserved.
-    sensitivity measures how much downstream quality changes per unit
-    change in this cell's input — the "amplification factor". -/
-structure Distortion where
-  retention   : Nat   -- Percentage of input information preserved (0-100)
-  sensitivity : Nat   -- Amplification factor: 1 = no amplification, >1 = magnifies changes
-  deriving Repr, BEq, DecidableEq
+-- ── Derived Properties ──────────────────────────────────────
 
-/-- Perfect fidelity: 100% retention, no amplification. -/
-def Distortion.perfect : Distortion where
-  retention := 100
-  sensitivity := 1
+/-- Chaining through top and then a channel yields at most that channel's fidelity.
+    Immediate from seq_top and le_refl. -/
+theorem FidelityAlgebra.seq_top_le [FidelityAlgebra F] (a : F) :
+    FidelityAlgebra.le (FidelityAlgebra.seq FidelityAlgebra.top a) a := by
+  rw [FidelityAlgebra.seq_top]; exact FidelityAlgebra.le_refl a
 
-/-- Total loss: 0% retention. -/
-def Distortion.total : Distortion where
-  retention := 0
-  sensitivity := 0
-
-/-- Sequential distortion composition: retentions MULTIPLY (via percentage),
-    sensitivities MULTIPLY (amplification compounds).
-    If A keeps 80% and B keeps 70%, the chain keeps 56%. -/
-def Distortion.seq (a b : Distortion) : Distortion where
-  retention := (a.retention * b.retention) / 100
-  sensitivity := a.sensitivity * b.sensitivity
-
-/-- Parallel distortion: take the MAXIMUM retention (best fidelity path),
-    and MAXIMUM sensitivity (worst-case amplification).
-    If you have two paths to data, the parallel distortion is bounded
-    by the best path for fidelity, worst path for sensitivity. -/
-def Distortion.par (a b : Distortion) : Distortion where
-  retention := Nat.max a.retention b.retention
-  sensitivity := Nat.max a.sensitivity b.sensitivity
-
--- ── Distortion Algebra Proofs ────────────────────────────────
-
-/-! Note: sequential distortion composition is NOT strictly associative
-    for Nat division (integer truncation breaks associativity). The
-    sensitivity component IS associative (it's just multiplication).
-    We prove weaker but correct properties instead. -/
-
-/-- Sensitivity composition is associative (Nat.mul is associative). -/
-theorem Distortion.seq_sensitivity_assoc (a b c : Distortion) :
-    (Distortion.seq (Distortion.seq a b) c).sensitivity
-    = (Distortion.seq a (Distortion.seq b c)).sensitivity := by
-  simp [Distortion.seq, Nat.mul_assoc]
-
-/-- Perfect distortion is left identity for sequential composition. -/
-theorem Distortion.seq_perfect_left (a : Distortion) :
-    Distortion.seq Distortion.perfect a = a := by
-  simp [Distortion.seq, Distortion.perfect]
-
-/-- Parallel distortion is commutative. -/
-theorem Distortion.par_comm (a b : Distortion) :
-    Distortion.par a b = Distortion.par b a := by
-  simp only [Distortion.par, Nat.max_comm]
-
-/-- Parallel distortion is associative. -/
-theorem Distortion.par_assoc (a b c : Distortion) :
-    Distortion.par (Distortion.par a b) c = Distortion.par a (Distortion.par b c) := by
-  simp only [Distortion.par, Nat.max_assoc]
-
-/-- Retention decreases (or stays) through sequential composition
-    when the second channel has retention ≤ 100.
-    This is the Data Processing Inequality in our algebra:
-    you can never GAIN information by passing through a lossy channel. -/
-theorem Distortion.seq_retention_le (a b : Distortion) (hb : b.retention ≤ 100) :
-    (Distortion.seq a b).retention ≤ a.retention := by
-  simp [Distortion.seq]
-  calc a.retention * b.retention / 100
-      ≤ a.retention * 100 / 100 := Nat.div_le_div_right (Nat.mul_le_mul_left _ hb)
-    _ = a.retention := Nat.mul_div_cancel _ (by omega)
-
-/-- Sensitivity compounds: sequential sensitivity ≥ first component
-    when second has sensitivity ≥ 1. -/
-theorem Distortion.seq_sensitivity_ge_left (a b : Distortion) (hb : 1 ≤ b.sensitivity) :
-    a.sensitivity ≤ (Distortion.seq a b).sensitivity := by
-  simp [Distortion.seq]
-  exact Nat.le_mul_of_pos_right a.sensitivity (by omega)
-
--- ── The Full Effect: Cost × Distortion ──────────────────────
-
-/-- A FullCellEffect combines cost accounting with distortion tracking.
-    This is the complete description of a cell's computational signature. -/
-structure FullCellEffect where
-  cost       : Effect
-  distortion : Distortion
-  deriving Repr, BEq, DecidableEq
-
-/-- Sequential composition of full effects. -/
-def FullCellEffect.seq (a b : FullCellEffect) : FullCellEffect where
-  cost := Effect.seq a.cost b.cost
-  distortion := Distortion.seq a.distortion b.distortion
-
-/-- Parallel composition of full effects. -/
-def FullCellEffect.par (a b : FullCellEffect) : FullCellEffect where
-  cost := Effect.par a.cost b.cost
-  distortion := Distortion.par a.distortion b.distortion
-
-/-- Zero full effect: no cost, perfect fidelity. -/
-def FullCellEffect.zero : FullCellEffect where
-  cost := Effect.zero
-  distortion := Distortion.perfect
-
-/-- Cost component of full sequential composition is associative.
-    (Distortion component is NOT fully associative due to Nat division truncation.
-    This is a known limitation of the integer percentage model.) -/
-theorem FullCellEffect.seq_cost_assoc (a b c : FullCellEffect) :
-    (FullCellEffect.seq (FullCellEffect.seq a b) c).cost
-    = (FullCellEffect.seq a (FullCellEffect.seq b c)).cost := by
-  simp [FullCellEffect.seq, Effect.seq_assoc]
-
-/-- Full parallel composition is commutative. -/
-theorem FullCellEffect.par_comm (a b : FullCellEffect) :
-    FullCellEffect.par a b = FullCellEffect.par b a := by
-  simp only [FullCellEffect.par, Effect.par_comm, Distortion.par_comm]
-
--- ── Non-Vacuity: Distortion Examples ────────────────────────
-
-/-- A summarizer that keeps 60% of information with 2x sensitivity. -/
-def exSummarizer : Distortion := { retention := 60, sensitivity := 2 }
-
-/-- A classifier that keeps 20% of information with 1x sensitivity. -/
-def exClassifier : Distortion := { retention := 20, sensitivity := 1 }
-
-/-- Chaining summarizer then classifier: 12% retention, 2x sensitivity. -/
-example : Distortion.seq exSummarizer exClassifier
-    = { retention := 12, sensitivity := 2 } := by decide
-
-/-- A 3-step pipeline: 80% → 60% → 20% = 9% retention.
-    From 47,000 tokens of source code to a 500-token decision:
-    only ~9% of the original information survives. -/
-def exPipeline3 : Distortion :=
-  Distortion.seq
-    (Distortion.seq { retention := 80, sensitivity := 1 }
-                    { retention := 60, sensitivity := 2 })
-    { retention := 20, sensitivity := 1 }
-
-example : exPipeline3.retention = 9 := by decide
-example : exPipeline3.sensitivity = 2 := by decide
+/-- A three-stage pipeline loses at least as much as the first two stages.
+    Corollary of DPI applied twice via transitivity. -/
+theorem FidelityAlgebra.dpi_chain [FidelityAlgebra F] (a b c : F) :
+    FidelityAlgebra.le (FidelityAlgebra.seq (FidelityAlgebra.seq a b) c)
+                       (FidelityAlgebra.seq a b) :=
+  FidelityAlgebra.dpi (FidelityAlgebra.seq a b) c
 
 -- ═══════════════════════════════════════════════════════════════
 -- SECTION 15: Differential Staleness — Beyond Binary
@@ -1268,10 +1166,9 @@ theorem max_drift_recomputes (v : Unified.Value) (src : String) (h : threshold �
   omega
 
 /-- Propagate differential staleness with drift estimation.
-    Drift is estimated as: sensitivity × (source change magnitude).
-    Clamped to 100 (maximum drift). -/
+    Drift magnitude is the source change magnitude, clamped to 100. -/
 def propagateDiffStale (states : String → DiffCellState) (cells : List Unified.Cell)
-    (changedCell : String) (changeMagnitude : Nat) (sensitivities : String → Nat)
+    (changedCell : String) (changeMagnitude : Nat)
     : String → DiffCellState :=
   fun n =>
     match states n with
@@ -1280,14 +1177,13 @@ def propagateDiffStale (states : String → DiffCellState) (cells : List Unified
       match cell? with
       | some c =>
         if c.deps.contains changedCell then
-          let drift := Nat.min 100 (sensitivities n * changeMagnitude)
+          let drift := Nat.min 100 changeMagnitude
           .stale v { magnitude := drift, source := changedCell }
         else .fresh v
       | none => .fresh v
     | other => other
 
-/-- Non-vacuity: cosmetic change (magnitude 5) with low sensitivity (1)
-    produces low drift (5), which is below a threshold of 20 → skip. -/
+/-- Non-vacuity: cosmetic change (magnitude 5) is below threshold of 20 → skip. -/
 example :
     let states := fun n => if n = "synthesize"
       then DiffCellState.fresh { content := "old", version := 1, stale := false }
@@ -1295,13 +1191,11 @@ example :
     let cells : List Unified.Cell := [
       { name := "synthesize", cellType := .synthesis,
         prompt := "{{analyze}}", refs := [{ cell := "analyze", field := none }] }]
-    let sensitivities := fun _ => 1
-    let newStates := propagateDiffStale states cells "analyze" 5 sensitivities
+    let newStates := propagateDiffStale states cells "analyze" 5
     (newStates "synthesize").shouldRecompute 20 = false := by
   decide
 
-/-- Non-vacuity: substantive change (magnitude 80) with high sensitivity (2)
-    produces high drift (100, clamped), above threshold → recompute. -/
+/-- Non-vacuity: substantive change (magnitude 80) is above threshold → recompute. -/
 example :
     let states := fun n => if n = "synthesize"
       then DiffCellState.fresh { content := "old", version := 1, stale := false }
@@ -1309,8 +1203,7 @@ example :
     let cells : List Unified.Cell := [
       { name := "synthesize", cellType := .synthesis,
         prompt := "{{analyze}}", refs := [{ cell := "analyze", field := none }] }]
-    let sensitivities := fun _ => 2
-    let newStates := propagateDiffStale states cells "analyze" 80 sensitivities
+    let newStates := propagateDiffStale states cells "analyze" 80
     (newStates "synthesize").shouldRecompute 20 = true := by
   decide
 
@@ -1331,8 +1224,9 @@ example :
     - Evaluate: takes a prompt string, runs LLM → produces a cell value
 
     The unit η : Data → Evaluate(Prompt(Data)) is "one round-trip":
-      data → fill template → run LLM → get back (distorted) data.
-    This is the identity distortion — one pass through the LLM.
+      data → fill template → run LLM → get back (lossy) data.
+    This is one pass through the LLM — fidelity loss is tracked
+    by the abstract preorder (Section 14).
 
     The counit ε : Prompt(Evaluate(computation)) → computation is refinement:
       compute → take output → re-prompt → get refined computation.
@@ -1351,11 +1245,12 @@ structure PromptOp where
   deriving Repr, BEq, DecidableEq
 
 /-- An evaluate operation: runs an LLM on a prompt.
-    This is the RIGHT adjoint (expensive, preserves limits). -/
+    This is the RIGHT adjoint (expensive, preserves limits).
+    Fidelity is tracked separately via the abstract preorder (Section 14),
+    not bundled into the eval operation. -/
 structure EvalOp where
   model    : String         -- Which model to use
   effect   : Effect         -- Expected cost
-  distort  : Distortion     -- Expected distortion
   deriving Repr, BEq, DecidableEq
 
 /-- A round-trip: prompt then evaluate. This is the monad T = Eval ∘ Prompt.
@@ -1368,25 +1263,22 @@ structure RoundTrip where
 /-- The effect of a round-trip is the eval's effect (prompting is free). -/
 def RoundTrip.effect (rt : RoundTrip) : Effect := rt.eval.effect
 
-/-- The distortion of a round-trip is the eval's distortion. -/
-def RoundTrip.distortion (rt : RoundTrip) : Distortion := rt.eval.distort
-
 /-- Sequential composition of round-trips (Kleisli composition).
     In the monad: given f : A → T B and g : B → T C, compose to get A → T C.
-    In Gas City: chain two cells. -/
+    In Gas City: chain two cells. Effects compose; fidelity is tracked
+    separately via the abstract preorder (Section 14). -/
 def RoundTrip.compose (first second : RoundTrip) : RoundTrip where
   prompt := second.prompt  -- Second cell's template
   eval := {
     model := second.eval.model
     effect := Effect.seq first.eval.effect second.eval.effect
-    distort := Distortion.seq first.eval.distort second.eval.distort
   }
 
 /-- Identity round-trip: no-op prompt, zero-cost eval.
     This is the monad unit η. -/
 def RoundTrip.identity : RoundTrip where
   prompt := { template := "{{input}}", refs := ["input"] }
-  eval := { model := "passthrough", effect := Effect.zero, distort := Distortion.perfect }
+  eval := { model := "passthrough", effect := Effect.zero }
 
 /-- The key asymmetry: prompting cost is always 0 (left adjoint is "free").
     This is a structural property of the adjunction. -/
@@ -1396,11 +1288,6 @@ theorem prompt_is_free : ∀ (rt : RoundTrip), rt.effect = rt.eval.effect := by
 /-- Composing round-trips composes effects sequentially. -/
 theorem RoundTrip.compose_effect (a b : RoundTrip) :
     (RoundTrip.compose a b).effect = Effect.seq a.effect b.effect := by
-  rfl
-
-/-- Composing round-trips composes distortions sequentially. -/
-theorem RoundTrip.compose_distortion (a b : RoundTrip) :
-    (RoundTrip.compose a b).distortion = Distortion.seq a.distortion b.distortion := by
   rfl
 
 /-- A refinement loop: evaluate, then re-prompt with the result, then re-evaluate.
@@ -1417,15 +1304,6 @@ def RefinementLoop.totalEffect (rl : RefinementLoop) : Effect where
   tokens := rl.base.effect.tokens * (1 + rl.refines)
   quality := rl.base.effect.quality  -- Quality of each individual run
 
-/-- Distortion improves with refinement (modeled as max of all runs).
-    With multiple runs, we take the best output. More runs = higher
-    expected retention (sampling from the distribution). -/
-def RefinementLoop.expectedRetention (rl : RefinementLoop) : Nat :=
-  -- Simple model: each run has independent chance of high retention.
-  -- Expected best-of-N: retention + (100 - retention) * (1 - (1-p)^N) ≈ retention
-  -- For our purposes: min(100, retention + refines * 5)
-  Nat.min 100 (rl.base.distortion.retention + rl.refines * 5)
-
 /-- Zero refinements = same cost as base. -/
 theorem RefinementLoop.zero_refines_same_cost (rt : RoundTrip) :
     (RefinementLoop.mk rt 0).totalEffect.tokens = rt.effect.tokens := by
@@ -1438,121 +1316,59 @@ theorem RefinementLoop.more_refines_more_cost (rt : RoundTrip) (n : Nat) :
   simp only [RefinementLoop.totalEffect, RoundTrip.effect]
   exact Nat.mul_le_mul_left _ (by omega)
 
-/-- Zero refinements = base retention (when retention ≤ 100). -/
-theorem RefinementLoop.zero_refines_base_retention (rt : RoundTrip)
-    (h : rt.eval.distort.retention ≤ 100) :
-    (RefinementLoop.mk rt 0).expectedRetention = rt.distortion.retention := by
-  simp only [RefinementLoop.expectedRetention, RoundTrip.distortion, Nat.zero_mul, Nat.add_zero]
-  simp [Nat.min_def]; omega
-
-/-- More refinements = better or equal retention (up to cap). -/
-theorem RefinementLoop.more_refines_better_retention (rt : RoundTrip) (n : Nat) :
-    (RefinementLoop.mk rt n).expectedRetention
-    ≤ (RefinementLoop.mk rt (n + 1)).expectedRetention := by
-  simp only [RefinementLoop.expectedRetention, RoundTrip.distortion]
-  simp [Nat.min_def]; split <;> split <;> omega
-
 -- ── Non-Vacuity: Adjunction Examples ────────────────────────
 
 /-- A concrete round-trip: extract types from source code. -/
 def exExtractTypes : RoundTrip where
   prompt := { template := "Read this code and list all types: {{source}}", refs := ["source"] }
-  eval := { model := "sonnet", effect := { tokens := 5000, quality := .good },
-            distort := { retention := 60, sensitivity := 1 } }
+  eval := { model := "sonnet", effect := { tokens := 5000, quality := .good } }
 
 /-- A concrete round-trip: synthesize from extracted types. -/
 def exSynthesize : RoundTrip where
   prompt := { template := "Given types: {{types}}, what algebra? {{patterns}}", refs := ["types", "patterns"] }
-  eval := { model := "opus", effect := { tokens := 12000, quality := .excellent },
-            distort := { retention := 80, sensitivity := 2 } }
+  eval := { model := "opus", effect := { tokens := 12000, quality := .excellent } }
 
-/-- Composing extract → synthesize gives total cost 17000, quality good,
-    retention 48% (60% × 80%), sensitivity 2. -/
+/-- Composing extract → synthesize gives total cost 17000, quality good. -/
 example : (RoundTrip.compose exExtractTypes exSynthesize).effect
     = { tokens := 17000, quality := .good } := by decide
 
-example : (RoundTrip.compose exExtractTypes exSynthesize).distortion
-    = { retention := 48, sensitivity := 2 } := by decide
-
 /-- A refinement loop: run extract-types 3 times (base + 2 refines).
-    Cost: 5000 × 3 = 15000. Expected retention: min(100, 60 + 10) = 70. -/
+    Cost: 5000 × 3 = 15000. -/
 example : (RefinementLoop.mk exExtractTypes 2).totalEffect.tokens = 15000 := by decide
-example : (RefinementLoop.mk exExtractTypes 2).expectedRetention = 70 := by decide
 
 -- ═══════════════════════════════════════════════════════════════
--- SECTION 17: The Rate-Distortion Bound
+-- SECTION 17: Pipeline Cost Accounting
 -- ═══════════════════════════════════════════════════════════════
 
-/-! Feynman's perturbation series and Tao's rate-distortion conjecture
-    both point to a fundamental bound: you cannot achieve arbitrarily
-    high retention at fixed cost.
-
-    The rate-distortion function R(D) gives the minimum token cost
-    to achieve distortion level D. Below R(D), no cell configuration
-    achieves the target quality. This is the LLM computation analogue
-    of Shannon's rate-distortion theorem.
-
-    We formalize a simplified version: given a pipeline of N cells,
-    each with cost c_i and retention r_i, the end-to-end retention
-    is bounded by the product of individual retentions, and the total
-    cost is the sum of individual costs. The OPTIMAL pipeline minimizes
-    cost subject to a retention floor. -/
+/-! Given a pipeline of N cells, the total cost is the sum of
+    individual costs. Fidelity loss through the pipeline is tracked
+    by the abstract preorder (Section 14) — the DPI guarantees
+    that each additional stage can only lose information, but we
+    make no fake-precision claims about specific retention percentages. -/
 
 /-- Total cost of a pipeline: sum of all cell costs. -/
 def pipelineTotalCost (p : List RoundTrip) : Nat :=
   p.foldl (fun acc rt => acc + rt.effect.tokens) 0
 
-/-- End-to-end retention of a pipeline: product of retentions / 100^(n-1).
-    Computed by sequential distortion composition. -/
-def pipelineRetention (p : List RoundTrip) : Nat :=
-  match p with
-  | [] => 100  -- Empty pipeline = perfect fidelity
-  | [rt] => rt.distortion.retention
-  | rt :: rest =>
-    let composedDist := rest.foldl (fun acc r =>
-      Distortion.seq acc r.distortion) rt.distortion
-    composedDist.retention
-
 /-- Empty pipeline has zero cost. -/
 theorem pipeline_empty_zero_cost : pipelineTotalCost [] = 0 := by rfl
-
-/-- Empty pipeline has perfect retention. -/
-theorem pipeline_empty_perfect_retention : pipelineRetention [] = 100 := by rfl
-
-/-- Single-cell pipeline retention equals cell retention. -/
-theorem pipeline_single_retention (rt : RoundTrip) :
-    pipelineRetention [rt] = rt.distortion.retention := by rfl
-
-/-- Two-cell pipeline retention = product / 100. -/
-theorem pipeline_two_retention (a b : RoundTrip) :
-    pipelineRetention [a, b] =
-    a.distortion.retention * b.distortion.retention / 100 := by rfl
 
 -- ── Non-Vacuity: Pipeline Examples ──────────────────────────
 
 /-- The algebraic survey pipeline: source → extract → pattern → synthesize → decide. -/
 def exPipeline : List RoundTrip := [
   { prompt := { template := "Read source: {{code}}", refs := ["code"] },
-    eval := { model := "sonnet", effect := { tokens := 5000, quality := .good },
-              distort := { retention := 80, sensitivity := 1 } } },
+    eval := { model := "sonnet", effect := { tokens := 5000, quality := .good } } },
   { prompt := { template := "Find patterns: {{types}}", refs := ["types"] },
-    eval := { model := "sonnet", effect := { tokens := 8000, quality := .adequate },
-              distort := { retention := 60, sensitivity := 2 } } },
+    eval := { model := "sonnet", effect := { tokens := 8000, quality := .adequate } } },
   { prompt := { template := "Synthesize: {{patterns}}", refs := ["patterns"] },
-    eval := { model := "opus", effect := { tokens := 12000, quality := .good },
-              distort := { retention := 70, sensitivity := 1 } } },
+    eval := { model := "opus", effect := { tokens := 12000, quality := .good } } },
   { prompt := { template := "Decide: {{synthesis}}", refs := ["synthesis"] },
-    eval := { model := "sonnet", effect := { tokens := 1000, quality := .adequate },
-              distort := { retention := 20, sensitivity := 1 } } }
+    eval := { model := "sonnet", effect := { tokens := 1000, quality := .adequate } } }
 ]
 
 /-- Pipeline total cost: 5000 + 8000 + 12000 + 1000 = 26000 tokens. -/
 example : pipelineTotalCost exPipeline = 26000 := by decide
-
-/-- End-to-end retention: 80% × 60% × 70% × 20% = 6.72% ≈ 6%
-    (integer truncation). From 47K tokens of source code,
-    only ~6% of information survives to the decision. -/
-example : pipelineRetention exPipeline = 6 := by decide
 
 -- ═══════════════════════════════════════════════════════════════
 -- SECTION 18: The Graded Monad — Effect-Indexed Computation
