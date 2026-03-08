@@ -1052,4 +1052,266 @@ We need:
 - A `gt map` command that applies templates over parameter lists
 -/
 
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 14: Distortion Algebra — the Dual of Cost
+-- ═══════════════════════════════════════════════════════════════
+
+/-! Every LLM cell is a lossy channel. The Effect algebra tracks COST (tokens,
+    quality). The Distortion algebra tracks FIDELITY — how much information
+    survives each transformation.
+
+    Together they form the rate-distortion dual:
+      Cost says: "How much did this cost to compute?"
+      Distortion says: "How faithfully does this represent the original?"
+
+    The Information Theorist identified this gap: "The algebra is
+    information-theoretically sound in its foundations but incomplete in
+    its accounting — it tracks cost but not distortion."
+
+    Tao named the structure: "A functor from the DAG category into
+    the poset of distortion levels, contravariant in quality."
+
+    The key insight: distortion ACCUMULATES through the pipeline.
+    If cell A distorts 20% and cell B distorts 30%, the composed
+    distortion is at least 44% (1 - 0.8 * 0.7), not 50% (additive).
+    Distortion composes multiplicatively via retention, not additively. -/
+
+/-- Distortion level of a single cell's transformation.
+    retention is a percentage (0-100) of information preserved.
+    sensitivity measures how much downstream quality changes per unit
+    change in this cell's input — the "amplification factor". -/
+structure Distortion where
+  retention   : Nat   -- Percentage of input information preserved (0-100)
+  sensitivity : Nat   -- Amplification factor: 1 = no amplification, >1 = magnifies changes
+  deriving Repr, BEq, DecidableEq
+
+/-- Perfect fidelity: 100% retention, no amplification. -/
+def Distortion.perfect : Distortion where
+  retention := 100
+  sensitivity := 1
+
+/-- Total loss: 0% retention. -/
+def Distortion.total : Distortion where
+  retention := 0
+  sensitivity := 0
+
+/-- Sequential distortion composition: retentions MULTIPLY (via percentage),
+    sensitivities MULTIPLY (amplification compounds).
+    If A keeps 80% and B keeps 70%, the chain keeps 56%. -/
+def Distortion.seq (a b : Distortion) : Distortion where
+  retention := (a.retention * b.retention) / 100
+  sensitivity := a.sensitivity * b.sensitivity
+
+/-- Parallel distortion: take the MAXIMUM retention (best fidelity path),
+    and MAXIMUM sensitivity (worst-case amplification).
+    If you have two paths to data, the parallel distortion is bounded
+    by the best path for fidelity, worst path for sensitivity. -/
+def Distortion.par (a b : Distortion) : Distortion where
+  retention := Nat.max a.retention b.retention
+  sensitivity := Nat.max a.sensitivity b.sensitivity
+
+-- ── Distortion Algebra Proofs ────────────────────────────────
+
+/-! Note: sequential distortion composition is NOT strictly associative
+    for Nat division (integer truncation breaks associativity). The
+    sensitivity component IS associative (it's just multiplication).
+    We prove weaker but correct properties instead. -/
+
+/-- Sensitivity composition is associative (Nat.mul is associative). -/
+theorem Distortion.seq_sensitivity_assoc (a b c : Distortion) :
+    (Distortion.seq (Distortion.seq a b) c).sensitivity
+    = (Distortion.seq a (Distortion.seq b c)).sensitivity := by
+  simp [Distortion.seq, Nat.mul_assoc]
+
+/-- Perfect distortion is left identity for sequential composition. -/
+theorem Distortion.seq_perfect_left (a : Distortion) :
+    Distortion.seq Distortion.perfect a = a := by
+  simp [Distortion.seq, Distortion.perfect]
+
+/-- Parallel distortion is commutative. -/
+theorem Distortion.par_comm (a b : Distortion) :
+    Distortion.par a b = Distortion.par b a := by
+  simp only [Distortion.par, Nat.max_comm]
+
+/-- Parallel distortion is associative. -/
+theorem Distortion.par_assoc (a b c : Distortion) :
+    Distortion.par (Distortion.par a b) c = Distortion.par a (Distortion.par b c) := by
+  simp only [Distortion.par, Nat.max_assoc]
+
+/-- Retention decreases (or stays) through sequential composition
+    when the second channel has retention ≤ 100.
+    This is the Data Processing Inequality in our algebra:
+    you can never GAIN information by passing through a lossy channel. -/
+theorem Distortion.seq_retention_le (a b : Distortion) (hb : b.retention ≤ 100) :
+    (Distortion.seq a b).retention ≤ a.retention := by
+  simp [Distortion.seq]
+  calc a.retention * b.retention / 100
+      ≤ a.retention * 100 / 100 := Nat.div_le_div_right (Nat.mul_le_mul_left _ hb)
+    _ = a.retention := Nat.mul_div_cancel _ (by omega)
+
+/-- Sensitivity compounds: sequential sensitivity ≥ first component
+    when second has sensitivity ≥ 1. -/
+theorem Distortion.seq_sensitivity_ge_left (a b : Distortion) (hb : 1 ≤ b.sensitivity) :
+    a.sensitivity ≤ (Distortion.seq a b).sensitivity := by
+  simp [Distortion.seq]
+  exact Nat.le_mul_of_pos_right a.sensitivity (by omega)
+
+-- ── The Full Effect: Cost × Distortion ──────────────────────
+
+/-- A FullCellEffect combines cost accounting with distortion tracking.
+    This is the complete description of a cell's computational signature. -/
+structure FullCellEffect where
+  cost       : Effect
+  distortion : Distortion
+  deriving Repr, BEq, DecidableEq
+
+/-- Sequential composition of full effects. -/
+def FullCellEffect.seq (a b : FullCellEffect) : FullCellEffect where
+  cost := Effect.seq a.cost b.cost
+  distortion := Distortion.seq a.distortion b.distortion
+
+/-- Parallel composition of full effects. -/
+def FullCellEffect.par (a b : FullCellEffect) : FullCellEffect where
+  cost := Effect.par a.cost b.cost
+  distortion := Distortion.par a.distortion b.distortion
+
+/-- Zero full effect: no cost, perfect fidelity. -/
+def FullCellEffect.zero : FullCellEffect where
+  cost := Effect.zero
+  distortion := Distortion.perfect
+
+/-- Cost component of full sequential composition is associative.
+    (Distortion component is NOT fully associative due to Nat division truncation.
+    This is a known limitation of the integer percentage model.) -/
+theorem FullCellEffect.seq_cost_assoc (a b c : FullCellEffect) :
+    (FullCellEffect.seq (FullCellEffect.seq a b) c).cost
+    = (FullCellEffect.seq a (FullCellEffect.seq b c)).cost := by
+  simp [FullCellEffect.seq, Effect.seq_assoc]
+
+/-- Full parallel composition is commutative. -/
+theorem FullCellEffect.par_comm (a b : FullCellEffect) :
+    FullCellEffect.par a b = FullCellEffect.par b a := by
+  simp only [FullCellEffect.par, Effect.par_comm, Distortion.par_comm]
+
+-- ── Non-Vacuity: Distortion Examples ────────────────────────
+
+/-- A summarizer that keeps 60% of information with 2x sensitivity. -/
+def exSummarizer : Distortion := { retention := 60, sensitivity := 2 }
+
+/-- A classifier that keeps 20% of information with 1x sensitivity. -/
+def exClassifier : Distortion := { retention := 20, sensitivity := 1 }
+
+/-- Chaining summarizer then classifier: 12% retention, 2x sensitivity. -/
+example : Distortion.seq exSummarizer exClassifier
+    = { retention := 12, sensitivity := 2 } := by decide
+
+/-- A 3-step pipeline: 80% → 60% → 20% = 9% retention.
+    From 47,000 tokens of source code to a 500-token decision:
+    only ~9% of the original information survives. -/
+def exPipeline3 : Distortion :=
+  Distortion.seq
+    (Distortion.seq { retention := 80, sensitivity := 1 }
+                    { retention := 60, sensitivity := 2 })
+    { retention := 20, sensitivity := 1 }
+
+example : exPipeline3.retention = 9 := by decide
+example : exPipeline3.sensitivity = 2 := by decide
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 15: Differential Staleness — Beyond Binary
+-- ═══════════════════════════════════════════════════════════════
+
+/-! Binary staleness (fresh/stale) is the correct first approximation.
+    But sometimes an upstream cell changes "cosmetically" (formatting,
+    whitespace) and sometimes it changes "substantively" (different
+    conclusions, new data). Re-running ALL downstream cells when an
+    upstream cell changes cosmetically wastes tokens.
+
+    Differential staleness tracks an ESTIMATED DRIFT magnitude alongside
+    the binary staleness flag. This enables smart recomputation:
+    - drift = 0: upstream changed but output is likely identical → skip
+    - drift < threshold: upstream changed slightly → maybe skip
+    - drift ≥ threshold: upstream changed significantly → must recompute -/
+
+/-- Drift estimate for a stale cell. -/
+structure DriftEstimate where
+  magnitude : Nat    -- 0-100: how much the upstream change affects this cell
+  source    : String -- Which upstream cell triggered the staleness
+  deriving Repr, BEq, DecidableEq
+
+/-- Extended cell state with differential staleness. -/
+inductive DiffCellState where
+  | empty     : DiffCellState
+  | stale     : (last : Unified.Value) → (drift : DriftEstimate) → DiffCellState
+  | computing : (last : Option Unified.Value) → DiffCellState
+  | fresh     : (val : Unified.Value) → DiffCellState
+  | failed    : (err : String) → (last : Option Unified.Value) → DiffCellState
+  deriving Repr, DecidableEq, BEq
+
+/-- A recomputation decision based on drift threshold. -/
+def DiffCellState.shouldRecompute (s : DiffCellState) (threshold : Nat) : Bool :=
+  match s with
+  | .stale _ drift => drift.magnitude ≥ threshold
+  | .empty => true
+  | _ => false
+
+/-- Zero drift never triggers recomputation (for any positive threshold). -/
+theorem zero_drift_skips (v : Unified.Value) (src : String) (h : 0 < threshold) :
+    (DiffCellState.stale v { magnitude := 0, source := src }).shouldRecompute threshold = false := by
+  simp [DiffCellState.shouldRecompute]
+  omega
+
+/-- Maximum drift always triggers recomputation (for any threshold ≤ 100). -/
+theorem max_drift_recomputes (v : Unified.Value) (src : String) (h : threshold ≤ 100) :
+    (DiffCellState.stale v { magnitude := 100, source := src }).shouldRecompute threshold = true := by
+  simp [DiffCellState.shouldRecompute]
+  omega
+
+/-- Propagate differential staleness with drift estimation.
+    Drift is estimated as: sensitivity × (source change magnitude).
+    Clamped to 100 (maximum drift). -/
+def propagateDiffStale (states : String → DiffCellState) (cells : List Unified.Cell)
+    (changedCell : String) (changeMagnitude : Nat) (sensitivities : String → Nat)
+    : String → DiffCellState :=
+  fun n =>
+    match states n with
+    | .fresh v =>
+      let cell? := cells.find? (·.name = n)
+      match cell? with
+      | some c =>
+        if c.deps.contains changedCell then
+          let drift := Nat.min 100 (sensitivities n * changeMagnitude)
+          .stale v { magnitude := drift, source := changedCell }
+        else .fresh v
+      | none => .fresh v
+    | other => other
+
+/-- Non-vacuity: cosmetic change (magnitude 5) with low sensitivity (1)
+    produces low drift (5), which is below a threshold of 20 → skip. -/
+example :
+    let states := fun n => if n = "synthesize"
+      then DiffCellState.fresh { content := "old", version := 1, stale := false }
+      else DiffCellState.empty
+    let cells : List Unified.Cell := [
+      { name := "synthesize", cellType := .synthesis,
+        prompt := "{{analyze}}", refs := [{ cell := "analyze", field := none }] }]
+    let sensitivities := fun _ => 1
+    let newStates := propagateDiffStale states cells "analyze" 5 sensitivities
+    (newStates "synthesize").shouldRecompute 20 = false := by
+  decide
+
+/-- Non-vacuity: substantive change (magnitude 80) with high sensitivity (2)
+    produces high drift (100, clamped), above threshold → recompute. -/
+example :
+    let states := fun n => if n = "synthesize"
+      then DiffCellState.fresh { content := "old", version := 1, stale := false }
+      else DiffCellState.empty
+    let cells : List Unified.Cell := [
+      { name := "synthesize", cellType := .synthesis,
+        prompt := "{{analyze}}", refs := [{ cell := "analyze", field := none }] }]
+    let sensitivities := fun _ => 2
+    let newStates := propagateDiffStale states cells "analyze" 80 sensitivities
+    (newStates "synthesize").shouldRecompute 20 = true := by
+  decide
+
 end BeadCalculus.GasCity
