@@ -74,7 +74,7 @@ Feynman asks the sharpest version of this question: "Why does approximate coordi
 
 **Tao** is more optimistic: if Gas City forms a topos, it has an internal logic that extends the algebra to the project level (Tao, Section 5.5). Agents could reason about other agents' computations using the internal logic.
 
-**The Information Theorist** is pragmatic: the algebra is "information-theoretically sound in its foundations but incomplete in its accounting" -- it tracks cost but not distortion (Info Theory, Summary).
+**The Information Theorist** is pragmatic: the algebra is "information-theoretically sound in its foundations but incomplete in its accounting" — it tracks cost, and the abstract fidelity preorder now provides the dual: an ordering on information preservation that composes alongside costs (Info Theory, Summary).
 
 **Resolution**: This is the deepest open question. The algebra works beautifully below formula level. Whether it can be extended above that level (the Tao conjecture) or whether project-level coordination requires fundamentally different tools (the Feynman position) is unresolved.
 
@@ -132,7 +132,7 @@ Tao's contributions are categorical and structurally precise:
 
 4. **The Prompt-Evaluate adjunction**: Prompting (cheap, preserves colimits) is left adjoint to evaluating (expensive, preserves limits). The monad T = Evaluate . Prompt is the "one round-trip" monad. The comonad W = Prompt . Evaluate is the refinement comonad (Tao, Section 5.3).
 
-5. **The representation theorem conjecture**: Every Gas City computation is equivalent to a navigation strategy in a rate-distortion-optimal codebook. If true, pipeline design reduces to information-theoretic optimization (Tao, Section 6.4).
+5. **The representation theorem conjecture**: Every Gas City computation is equivalent to a navigation strategy in the fidelity preorder that maximizes information preservation. If true, pipeline design reduces to preorder-optimal resource allocation (Tao, Section 6.4).
 
 ---
 
@@ -145,7 +145,7 @@ The Lean 4 file `GasCity.lean` (1055 lines, 13 sections) contains:
 - Quality lattice: `min_comm`, `min_assoc`, `min_excellent_left`, `min_excellent_right`
 - Staleness: `propagateStale_sound`, `propagateStale_preserves`, `propagateStale_non_fresh`
 - DAG readiness: `source_ready_initially`, `sink_ready_after_source`, `monotone_witness`
-- Compression: `extend_increases_depth`, `extend_retention_le`
+- Compression: `extend_increases_depth`, `extend_fidelity_le` (monotone decrease under composition)
 - Pins: `pin_blocks_evaluation`, `unpin_restores_state`
 - Input snapshots: `log_captures_inputs`
 - Recomputation: `eager_always_recomputes`, `budgeted_respects_limit`, `convergent_stops`
@@ -171,8 +171,7 @@ The Lean 4 file `GasCity.lean` (1055 lines, 13 sections) contains:
 
 | Gap | Described in | Not in Lean |
 |-----|-------------|-------------|
-| Distortion algebra (dual of cost algebra) | Info Theory Section 4, Tao Section 2.2 | No distortion tracking |
-| Sensitivity/amplification factors | Info Theory Section 2, Tao Section 2.2 | No sensitivity field on Effect |
+| Fidelity preorder (dual of cost algebra) | Info Theory Section 4, Tao Section 2.2 | Abstract preorder model (reflexive, transitive ≤, monotone composition) |
 | Graded monad naming | Tao Section 1.2 | Effect monoid exists but not named as graded monad |
 | Presheaf/sheaf structure | Tao Section 1.4 | propagateStale exists but not connected to sheaf theory |
 | Prompt-Evaluate adjunction | Tao Section 5.3 | Not formalized |
@@ -204,7 +203,7 @@ Ranked by impact and feasibility:
 
 4. **Build the Living Grid view** (medium effort, high impact). The Power User's most requested feature: a single view showing all cells, their values, staleness, cost, and dependencies. Start with a terminal-based grid (ASCII art like the mockup in the visualization doc). Graphical UI can follow.
 
-5. **Extend the effect algebra with a sensitivity field** (low effort, medium impact). Add `sensitivity : Nat` to `Effect` to track distortion amplification. The Information Theorist and Tao both identify this as the key missing field for cost-quality optimization.
+5. **Formalize the fidelity preorder** (low effort, medium impact). The abstract preorder on fidelity (reflexive, transitive ≤, with monotone seq/par composition and a top element for lossless) captures the information-preservation structure that sensitivity tracking was trying to approximate. The preorder composes alongside the cost algebra without requiring quantitative distortion values.
 
 6. **Implement the Multiverse Diff** (low effort, medium impact). Run a cell 3 times, compare outputs, identify stable vs. volatile claims. This is Wolfram's branch stability protocol in a practical UX. The visualization design already specifies the UI.
 

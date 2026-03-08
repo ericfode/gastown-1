@@ -124,9 +124,10 @@ Gas City sits at the intersection of five established fields:
    interchange. Not an analogy — a direct mathematical identification, proven in
    Lean. Coeffects (Petricek 2014) would add backward-flowing quality demands.
 
-3. **Rate-Distortion Theory** (Shannon 1959): Each LLM cell is a lossy codec.
-   Token budgeting is rate-distortion optimization. The optimal allocation:
-   equal marginal distortion per token across cells (water-filling solution).
+3. **Fidelity Preorder** (Shannon 1959, Data Processing Inequality): Each LLM
+   cell is a lossy codec. Fidelity has an abstract preorder: sequential
+   composition is monotone decreasing, parallel is monotone increasing. The
+   preorder captures information preservation without quantitative distortion.
 
 4. **Chemical Abstract Machine** (Berry & Boudol 1992): Gas City's "molecule"
    terminology is literal. Beads = molecules, formulas = reaction rules,

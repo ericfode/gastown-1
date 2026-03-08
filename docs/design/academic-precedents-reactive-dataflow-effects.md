@@ -256,9 +256,9 @@ token budgets.
 
 **What Gas City could adopt**: Bidirectional grading — effects flow forward
 (cost accumulates), coeffects flow backward (requirements propagate). This
-enables the optimal token allocation theorem: marginal distortion reduction
-per token should be equal across cells (the Lagrangian condition from the
-information-theoretic analysis).
+enables fidelity-aware resource allocation: the abstract preorder determines
+which cells are most critical for information preservation, guiding token
+allocation by preorder position rather than quantitative distortion curves.
 
 ### 3.3 Algebraic Effects and Handlers
 
@@ -348,18 +348,18 @@ characterizes the fundamental limit of lossy compression.
 **Effect/cost tracking**: The rate R (bits/symbol) is the cost; the distortion
 D is the quality loss. R(D) defines the Pareto frontier of cost vs. quality.
 
-**Gas City mapping**: Each LLM cell is a lossy codec with a rate-distortion
-curve. "Rate" = tokens consumed; "Distortion" = quality degradation. The
-rate-distortion function of a cell gives the minimum tokens needed to achieve
-a target quality level. Gas City's token budgeting problem is precisely
-rate-distortion optimization: minimize total tokens subject to end-to-end
-quality constraints.
+**Gas City mapping**: Each LLM cell is a lossy codec. Rate-distortion theory
+provides the theoretical foundation, but Gas City implements this via the
+abstract fidelity preorder: fidelity has a preorder (reflexive, transitive ≤),
+sequential composition is monotone decreasing (Data Processing Inequality:
+`seq a b ≤ a`), and parallel composition is monotone increasing (`a ≤ par a b`).
+The preorder captures information preservation ordering without requiring
+empirical rate-distortion curves or quantitative distortion values.
 
-**What Gas City could adopt**: Empirically estimate each cell's rate-distortion
-curve by running at various token budgets and measuring output quality. Use
-these curves for optimal token allocation: the Lagrangian condition (equal
-marginal distortion per token across cells) is exactly the water-filling
-solution from information theory.
+**What Gas City adopts**: The abstract preorder model rather than empirical
+rate-distortion optimization. The honest mathematical content is the *shape*
+of how fidelity composes through a DAG — no named levels, no percentages,
+no sensitivity multipliers. Just the ordering and its composition laws.
 
 ### 4.2 Data Processing Inequality
 
@@ -895,8 +895,8 @@ many dependents; (3) cells whose staleness blocks other agents.
 | `{{ref}}` wire | FRP lifting, Kahn channel, tuple space pattern | Elliott 1997, Kahn 1974, Gelernter 1985 |
 | Staleness propagation | Self-adjusting computation, Adapton dirtying, sheafification | Acar 2002, Hammer 2014, Grothendieck 1957 |
 | Effect algebra (seq/par) | Graded monad with duoidal structure | Katsumata 2014, Orchard 2020, Aguiar & Mahajan 2010 |
-| Token budget | Rate-distortion, Landauer cost | Shannon 1959, Landauer 1961 |
-| Quality tracking | Distortion measure, information bottleneck | Shannon 1959, Tishby 2000 |
+| Token budget | Fidelity preorder, Landauer cost | Shannon 1959, Landauer 1961 |
+| Quality tracking | Abstract fidelity ordering, information bottleneck | Shannon 1959, Tishby 2000 |
 | Molecule formula | CHAM reaction rule, P system evolution rule | Berry & Boudol 1992, Păun 2000 |
 | Rig/membrane | CHAM membrane, P system membrane | Berry & Boudol 1992, Păun 2000 |
 | Polecat | BDI agent, ant in stigmergic colony | Rao & Georgeff 1995, Parunak 1997 |
@@ -910,7 +910,7 @@ many dependents; (3) cells whose staleness blocks other agents.
 
 **High priority** (directly applicable, proven in related systems):
 1. **Adapton two-phase protocol** — Lazy recomputation saves tokens for large DAGs
-2. **Rate-distortion optimization** — Principled token budgeting via water-filling
+2. **Fidelity preorder model** — Abstract information preservation ordering for resource allocation
 3. **Coeffect-based demand propagation** — Quality requirements flow backward
 4. **CHAM formal semantics** — Enables deadlock detection and confluence analysis
 

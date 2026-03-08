@@ -73,22 +73,13 @@ This is where Gas City's cell type taxonomy becomes information-theoretically si
 
 ### The Optimal Tradeoff
 
-For a pipeline of *k* cells, the end-to-end distortion is bounded by:
+For a pipeline of *k* cells, the end-to-end fidelity is bounded by the abstract preorder:
 
-*D_total ≤ Σᵢ Dᵢ + interaction terms*
+*fidelity(pipeline) ≤ fidelity(weakest_cell)*
 
-The interaction terms arise because distortion at cell *i* can be amplified by cell *i+1*. This is the **distortion amplification problem**: a small error in an inventory cell (missing one type) can cause a large error in a synthesis cell (the "algebra" conclusion is wrong).
+Information loss at any cell propagates downstream — a small error in an inventory cell (missing one type) can cause a large error in a synthesis cell (the "algebra" conclusion is wrong). This is the **fidelity degradation problem**, captured by the monotone decrease property of sequential composition.
 
-Gas City's `Quality.min` composition law captures this: the quality of a sequential pipeline is bounded by its weakest link. But this is a *pessimistic* bound. The information-theoretic bound is tighter: distortion amplification depends on the *sensitivity* of each cell's function to its inputs. A synthesis cell that is robust to minor inventory errors has low sensitivity and thus low distortion amplification.
-
-**Recommendation**: Gas City should track not just `Quality` but *sensitivity* — how much does output quality degrade per unit of input distortion? This would enable tighter cost-quality tradeoffs. A low-sensitivity cell can tolerate draft-quality inputs; a high-sensitivity cell needs excellent inputs. The effect algebra should include:
-
-```
-structure Effect where
-  tokens      : Nat
-  quality     : Quality
-  sensitivity : Nat  -- amplification factor (1 = robust, high = fragile)
-```
+Gas City's `Quality.min` composition law captures this: the quality of a sequential pipeline is bounded by its weakest link. The abstract preorder model provides the precise formulation: fidelity has a preorder (reflexive, transitive ≤), sequential composition is monotone *decreasing* (the Data Processing Inequality: `seq a b ≤ a`), and parallel composition is monotone *increasing* (best-path property: `a ≤ par a b`). The preorder captures when fidelity degrades through composition without requiring quantitative amplification factors or sensitivity multipliers — the ordering itself is the content.
 
 ---
 
@@ -218,9 +209,9 @@ The compression function should satisfy:
 - **Associativity**: *(f ∘ g) ∘ h = f ∘ (g ∘ h)* — already proven for `Effect.seq_assoc`
 - **Identity**: *id ∘ f = f = f ∘ id* — already proven for `Effect.seq_zero_left/right`
 - **Commutativity of parallel**: *f ⊗ g = g ⊗ f* — already proven for `Effect.par_comm`
-- **Sub-additivity of information loss**: *D(f ∘ g) ≤ D(f) + D(g)* — NOT currently tracked
+- **Monotone decrease under composition**: *fidelity(f ∘ g) ≤ fidelity(f)* — captured by the abstract preorder (Data Processing Inequality)
 
-The effect algebra is a *cost algebra*. What's missing is a *distortion algebra* that composes alongside costs.
+The effect algebra is a *cost algebra*. The fidelity ordering (abstract preorder on information preservation) composes alongside costs: sequential composition is monotone decreasing, parallel composition is monotone increasing, and there is a top element (lossless). This is the dual of cost tracking, expressed as an ordering rather than as quantitative distortion values.
 
 ---
 
@@ -238,21 +229,17 @@ This is not a defect — it is the POINT. The goal is not to preserve all inform
 
 ### The Optimal Schedule
 
-Consider a linear chain of *k* cells, each with token budget *tᵢ*, total budget *T = Σtᵢ*. The end-to-end distortion is:
+The abstract fidelity preorder provides the structural answer to resource allocation. For a linear chain of *k* cells with total token budget *T = Σtᵢ*:
 
-*D_total = D₁(t₁) + D₂(t₂) · (1 - D₁(t₁)) + ... ≈ Σ Dᵢ(tᵢ)* (for small distortions)
+- Sequential composition is monotone decreasing: each cell can only decrease fidelity
+- The end-to-end fidelity is bounded by the weakest link in the chain
+- More tokens generally improve a cell's fidelity, with diminishing returns
 
-where *Dᵢ(tᵢ)* is the distortion of cell *i* at rate *tᵢ*. The rate-distortion function for LLMs is typically *convex and decreasing* — more tokens means less distortion, with diminishing returns.
-
-By Lagrange multipliers, the optimal budget allocation satisfies:
-
-*D'₁(t₁*) = D'₂(t₂*) = ... = D'ₖ(tₖ*) = λ*
-
-That is: **the marginal distortion reduction per token should be equal across all cells.** If one cell has high marginal return (adding tokens significantly improves quality), allocate more budget to it. If another cell has low marginal return (already good enough), reduce its budget.
+The optimal allocation follows from the preorder structure: **allocate more resources to cells where fidelity is most critical** — cells whose position in the ordering has the greatest downstream impact. This replaces the quantitative "equal marginal distortion per token" condition with a structural analysis of the preorder chain.
 
 ### Practical Implications for Gas City
 
-1. **Don't allocate tokens uniformly.** The current `Effect.tokens` field tracks cost but doesn't optimize allocation. A cost-aware scheduler should allocate more tokens to high-sensitivity, high-impact cells.
+1. **Don't allocate tokens uniformly.** The current `Effect.tokens` field tracks cost but doesn't optimize allocation. A cost-aware scheduler should allocate more tokens to cells that are highest in the fidelity preorder chain — where information loss has the greatest downstream impact.
 
 2. **Source cells (leaves of the DAG) are the most important.** Information lost at the source propagates through the entire chain. The optimal schedule typically allocates the most tokens to source cells and progressively fewer to downstream synthesis cells. This matches the intuition that "analysis" cells should be thorough while "summary" cells can be brief.
 
@@ -268,7 +255,7 @@ For a Gas City pipeline with total token budget *T*:
 
 This is a constrained optimization over the rate allocation. The constraint is the total token budget (or total dollar cost). The objective is the mutual information between the original source and the final output.
 
-Gas City's effect algebra gives us the *cost side* of this equation (proven compositional). The *information side* is what's missing. Adding it would transform Gas City from a cost-tracking system to an *information-optimal scheduling system*.
+Gas City's effect algebra gives us the *cost side* of this equation (proven compositional). The *information side* is captured by the abstract fidelity preorder, which provides the ordering structure for information preservation without requiring quantitative rate-distortion curves.
 
 ### The Landauer Connection
 
@@ -284,21 +271,21 @@ We don't know *f* precisely, but it exists. This means there is a *minimum token
 
 | Aspect | Current Model | Information-Theoretic Assessment | Recommendation |
 |--------|--------------|----------------------------------|----------------|
-| Effect algebra | Cost monoid (seq, par) | Correct but incomplete | Add distortion/sensitivity fields |
+| Effect algebra | Cost monoid (seq, par) | Correct; fidelity preorder is the dual | Abstract preorder captures information ordering |
 | Quality lattice | Total order (draft → excellent) | Good proxy for channel quality | Consider per-cell-type quality metrics |
 | Staleness | Binary (fresh/stale) | 0th-order approximation | Add drift magnitude (v1), confidence (v2) |
 | Compression | Implicit | Needs formal treatment | Track information throughput per cell |
-| Budget allocation | Uniform (per cell) | Suboptimal | Marginal-distortion-equalized allocation |
+| Budget allocation | Uniform (per cell) | Suboptimal | Allocate by fidelity criticality (preorder analysis) |
 | Recomputation order | Topological | Suboptimal for information preservation | Bottleneck-first recomputation |
 | Parallel composition | `max` cost, `min` quality | Correct for cost/quality | Add: preserves more information than sequential |
 | `par_le_seq` theorem | Token cost bound | Also an information preservation bound | Formalize the information inequality too |
 | DAG depth | Unbounded | Information decays with depth (DPI) | Track and limit effective chain depth |
-| Composition laws | Proven (assoc, identity, comm) | Sound | Add sub-additivity of distortion |
+| Composition laws | Proven (assoc, identity, comm) | Sound | Fidelity preorder composes monotonically |
 
 ### The Verdict
 
 The Gas City formalization is *information-theoretically sound in its foundations* but *incomplete in its accounting*. The effect algebra correctly captures cost composition, and the quality lattice provides a useful proxy for channel quality. The staleness model is a valid first approximation. The key Lean proofs (effect associativity, `par_le_seq`, staleness soundness, readiness monotonicity) all hold up under information-theoretic scrutiny.
 
-What's missing is the *dual* of the cost algebra: a *distortion algebra* that tracks how much information is lost at each stage and how that loss compounds through the DAG. The Data Processing Inequality provides the theoretical foundation for this extension. Adding it would elevate Gas City from a cost-tracking execution engine to an information-optimal coordination system.
+The dual of the cost algebra is the *fidelity preorder* — an abstract ordering on information preservation that composes through the DAG. The Data Processing Inequality provides the theoretical foundation: sequential composition is monotone decreasing (`seq a b ≤ a`), parallel composition is monotone increasing (`a ≤ par a b`), and there is a top element (lossless). This preorder captures the essential shape of how information degrades through composition without requiring quantitative distortion values or sensitivity multipliers.
 
-The compression chain model is the RIGHT abstraction. Shannon would approve. The question is not whether to compress — every finite-bandwidth channel compresses. The question is whether the compression is *sufficient* (preserves what downstream cells need) and *efficient* (doesn't waste tokens on information that will be discarded anyway). Gas City's typed DAG structure provides the scaffold for answering both questions; the effect system just needs to be extended to track information as carefully as it tracks cost.
+The compression chain model is the RIGHT abstraction. Shannon would approve. The question is not whether to compress — every finite-bandwidth channel compresses. The question is whether the compression is *sufficient* (preserves what downstream cells need) and *efficient* (doesn't waste tokens on information that will be discarded anyway). Gas City's typed DAG structure provides the scaffold for answering both questions; the abstract fidelity preorder provides the information-side dual to the cost algebra.

@@ -97,15 +97,15 @@ Gas City's existing theorems — `seq_assoc`, `par_le_seq`, the staleness propag
 
 The deep theorems would establish *fundamental limits* — things that are true of ALL systems with this structure, not just Gas City's particular implementation.
 
-**Theorem (Agent Rate-Distortion Bound)**. Let `Π` be a Gas City pipeline of `k` cells with effects `e₁, ..., eₖ`. Let `D_i` be the distortion introduced by cell `i` (measuring information loss from its ideal output). Then:
+**Theorem (Fidelity Monotonicity / Data Processing Inequality)**. Let `Π` be a Gas City pipeline of `k` cells. Fidelity has an abstract preorder (reflexive, transitive ≤) with the following composition laws:
 
-$$D_{\text{total}} \geq \sum_{i=1}^{k} D_i^* \cdot \prod_{j>i} A_j$$
+- **Sequential**: `seq a b ≤ a` — composing cells can only decrease fidelity
+- **Parallel**: `a ≤ par a b` — parallel composition preserves at least as much as either branch alone
+- **Top element**: There exists a lossless element `⊤` such that `a ≤ ⊤` for all `a`
 
-where `D_i*` is the rate-distortion optimal distortion for cell `i`'s channel capacity, and `A_j` is the *distortion amplification factor* of cell `j` — the Lipschitz constant of cell `j`'s computation with respect to input perturbations.
+The end-to-end fidelity of a pipeline is bounded by its weakest sequential link. No quantitative distortion values or amplification factors are needed — the preorder itself captures the essential constraint.
 
-This is the formal version of the information-theoretic analysis's "distortion amplification problem." The key insight is that distortion is not additive but *multiplicative* through synthesis cells (which amplify upstream errors) and merely additive through inventory cells (which preserve errors linearly). The product `∏ Aⱼ` can be exponential in the pipeline depth for synthesis-heavy pipelines, giving a formal no-free-lunch result:
-
-> **Corollary**: Deep synthesis chains have exponential worst-case distortion amplification. Effective pipeline design requires alternating synthesis with high-fidelity (inventory/review) cells to bound the product of amplification factors.
+> **Corollary**: Deep synthesis chains monotonically decrease fidelity. Effective pipeline design requires interleaving high-fidelity (inventory/review) cells to maintain the preorder above a minimum threshold.
 
 **Theorem (Budget-Quality Pareto Frontier)**. For a fixed DAG topology and fixed input, the set of achievable (cost, quality) pairs forms a Pareto frontier that is convex and monotone decreasing. Moreover, the Pareto frontier has a *phase transition*: there exists a critical budget `C*` below which quality degrades gracefully (log-linearly), and below which quality degrades catastrophically (the "collapse threshold").
 
@@ -166,21 +166,19 @@ Define `K_M(x)` as the length of the shortest string `y` such that model `M`, gi
 
 Property 3 is the information-theoretic justification for the empirical observation that larger LLMs are better at summarization: they have lower `K_M` for the same distortion level.
 
-### 3.2 The Compression Chain as a Rate-Distortion Cascade
+### 3.2 The Compression Chain as a Fidelity Cascade
 
-A Gas City pipeline is a *cascade of rate-distortion codecs*. Each cell `i` operates at rate `R_i` and distortion `D_i`. The end-to-end distortion is:
+A Gas City pipeline is a *cascade of lossy codecs*. The abstract fidelity preorder captures how information preservation composes through the chain:
 
-$$D_{\text{total}} = g(D_1, D_2, \ldots, D_k)$$
+- **Sequential composition**: `seq a b ≤ a` — each additional cell can only decrease fidelity (Data Processing Inequality)
+- **Parallel composition**: `a ≤ par a b` — parallel branches preserve at least as much as either alone
+- **Top element**: Lossless (identity) preserves all information
 
-where `g` depends on the DAG topology. For a linear chain, `g` is *at best* additive (if distortions are independent) and *at worst* multiplicative (if downstream cells amplify upstream errors).
+For a linear chain, end-to-end fidelity is bounded by the weakest link. For a DAG with parallel branches, the `par` operation recovers fidelity by taking the best available path.
 
-**The optimal budget allocation problem**: Given a total token budget `B` and a pipeline DAG, how should you allocate tokens to cells to minimize end-to-end distortion?
+**The resource allocation problem**: Given a total token budget `B` and a pipeline DAG, how should you allocate tokens to cells to maximize end-to-end fidelity?
 
-This is a convex optimization problem if the rate-distortion curves `R_i(D_i)` are convex (which they are, by Shannon's theorem). The Lagrangian gives the optimality condition:
-
-$$\frac{\partial D_{\text{total}}}{\partial R_i} = \lambda \quad \text{for all } i$$
-
-which says: **at the optimum, the marginal distortion reduction per token is equal across all cells**. If one cell has a much steeper rate-distortion curve (more benefit per additional token), you should allocate more tokens there. This gives a principled answer to Gas City's cost-aware dispatch problem: the `cheapestAgent` function should be replaced by a *rate-distortion optimal allocation* that considers the sensitivity of each cell's quality to its token budget.
+The abstract preorder provides the structural answer: **allocate resources to the cells where fidelity is most critical in the preorder chain** — cells whose position in the ordering has the greatest downstream impact on information preservation. This gives a principled answer to Gas City's cost-aware dispatch problem without requiring empirical rate-distortion curves or sensitivity multipliers.
 
 ### 3.3 The Minimum Description Length Principle
 
@@ -341,7 +339,7 @@ The Gas City Lean formalization should:
 
 2. **Formalize the presheaf structure**. Show that the DAG category with staleness forms a site, and that `propagateStale` is the associated sheaf functor. This would connect Gas City to Mathlib's category theory library.
 
-3. **Prove the rate-distortion bound**. This requires formalizing a distortion measure on cell values and showing that pipeline distortion satisfies the amplification inequality. This is the hardest theorem but also the most practically useful — it would give formal cost-quality guarantees for pipeline configurations.
+3. **Prove the fidelity preorder laws**. This requires formalizing the abstract preorder on fidelity and showing that pipeline composition is monotone (Data Processing Inequality). The preorder model replaces quantitative distortion measures with an abstract ordering — the honest mathematical content is the shape of how fidelity composes, not numerical bounds.
 
 4. **Formalize the adjunction Prompt ⊣ Evaluate**. This would give Gas City a principled theory of refinement loops, answering open question #1 (iteration) from the Gas City vision.
 
@@ -351,11 +349,11 @@ The Gas City Lean formalization should:
 
 I believe there is a **representation theorem** waiting to be discovered:
 
-> **Conjecture (Representation Theorem for Agent Computation)**. Every computation expressible in the Gas City framework — typed cells, graded effects, reactive staleness, DAG composition — is equivalent to a navigation strategy in a rate-distortion-optimal codebook for the joint distribution of (task, codebase, agent capabilities). The optimal pipeline for a task is the one that achieves the Shannon lower bound on end-to-end distortion for the given token budget.
+> **Conjecture (Representation Theorem for Agent Computation)**. Every computation expressible in the Gas City framework — typed cells, graded effects, reactive staleness, DAG composition — is equivalent to a navigation strategy in the fidelity preorder that maximizes information preservation for a given resource budget. The optimal pipeline for a task is the one that maintains the highest position in the fidelity ordering across all cells.
 
-If true, this would mean: there is a *canonical* pipeline for every task, determined by information-theoretic optimality. Pipeline design reduces to estimating the joint distribution and solving the rate-distortion optimization. The "art" of agent coordination becomes the "science" of information-theoretic resource allocation.
+If true, this would mean: there is a *canonical* pipeline for every task, determined by the fidelity preorder structure. Pipeline design reduces to analyzing the preorder composition laws and finding the DAG topology that keeps fidelity above the required threshold. The "art" of agent coordination becomes the "science" of preorder-optimal resource allocation.
 
-This is the analogue of Shannon's channel coding theorem for agent computation. Shannon showed that reliable communication has a fundamental limit (channel capacity) and that the limit is achievable (random codes approach capacity). The conjecture says: reliable agent computation has a fundamental limit (rate-distortion bound) and the limit is achievable (the optimal Gas City pipeline approaches it).
+This is the analogue of Shannon's channel coding theorem for agent computation. Shannon showed that reliable communication has a fundamental limit (channel capacity) and that the limit is achievable. The conjecture says: reliable agent computation has a fundamental limit (the fidelity floor of the preorder under composition) and the limit is achievable (the optimal Gas City pipeline approaches it).
 
 Whether this is true is, I think, the most important open question in the mathematics of LLM coordination.
 
@@ -367,8 +365,7 @@ Whether this is true is, I think, the most important open question in the mathem
 |---|---|
 | `T_{(c,q)} A` | Graded monad: computation of type A costing ≤ c tokens at quality ≥ q |
 | `K_M(x)` | Model-conditional Kolmogorov complexity |
-| `R(D)` | Rate-distortion function |
-| `D_i`, `A_j` | Per-cell distortion and amplification factor |
+| `≤` | Fidelity preorder (abstract ordering on information preservation) |
 | **GC** | The Gas City computation category |
 | **D** | The DAG poset category |
 | Ω | Subobject classifier (truth values for agent computation) |
