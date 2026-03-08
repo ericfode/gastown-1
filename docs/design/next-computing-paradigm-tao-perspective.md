@@ -228,7 +228,7 @@ If this picture is correct, then the fundamental question becomes:
 
 This is a reinforcement learning problem in disguise. The "state" is the current position in rulial space (the set of computed cell values). The "action" is choosing which cell to evaluate next and with what model. The "reward" is end-to-end quality. The "cost" is tokens consumed.
 
-Gas City's effect algebra gives a *static* answer: predict cost and quality before execution. But the dynamic question — which cell to evaluate next, given what we've learned so far — is an *exploration-exploitation tradeoff* in rulial space. The optimal strategy is likely a variant of Thompson sampling or UCB, adapted to the DAG structure.
+Gas City's effect algebra gives a *compositional* answer: track cost and quality as execution proceeds, using historical data to inform scheduling. The dynamic question — which cell to evaluate next, given what we've learned so far — is an *exploration-exploitation tradeoff* in rulial space. The optimal strategy is likely a variant of Thompson sampling or UCB, adapted to the DAG structure.
 
 **Conjecture**: The optimal cell scheduling policy for a Gas City pipeline under budget constraints is equivalent to a Gittins index policy on the DAG, where the Gittins index of each cell depends on its expected information gain (reduction in uncertainty about the final output) per token cost.
 

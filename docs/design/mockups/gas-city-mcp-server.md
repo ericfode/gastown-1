@@ -313,7 +313,7 @@ provenance metadata.
 |------|-----------|------|
 | `cell_not_found` | Cell doesn't exist in sheet | `{ "error": "cell_not_found", "cellName": "bad", "available": [...] }` |
 | `inputs_empty` | One or more required input cells have no value | `{ "error": "inputs_empty", "emptyCells": ["communication"] }` |
-| `budget_exceeded` | Estimated cost exceeds remaining budget | `{ "error": "budget_exceeded", "estimated": 12000, "remaining": 5000 }` |
+| `budget_exceeded` | Token spend has hit the budget cap | `{ "error": "budget_exceeded", "spent": 12000, "cap": 5000 }` |
 | `eval_failed` | LLM call failed | `{ "error": "eval_failed", "detail": "rate_limited", "retryAfterMs": 30000 }` |
 
 ---
@@ -896,11 +896,11 @@ a list of inputs.
         "properties": {
           "cellName": { "type": "string" },
           "status": { "enum": ["created", "already_exists"] },
-          "estimatedCost": { "type": "integer", "description": "Estimated tokens for evaluation" }
+          "budgetCap": { "type": "integer", "description": "Token budget cap for this cell" }
         }
       }
     },
-    "totalEstimatedCost": { "type": "integer" }
+    "totalBudgetCap": { "type": "integer" }
   }
 }
 ```
@@ -928,11 +928,11 @@ a list of inputs.
 {
   "templateName": "analyze-module",
   "sheets": [
-    { "cellName": "analyze-dispatch", "status": "created", "estimatedCost": 15000 },
-    { "cellName": "analyze-beads", "status": "created", "estimatedCost": 12000 },
-    { "cellName": "analyze-witness", "status": "created", "estimatedCost": 9000 }
+    { "cellName": "analyze-dispatch", "status": "created", "budgetCap": 15000 },
+    { "cellName": "analyze-beads", "status": "created", "budgetCap": 12000 },
+    { "cellName": "analyze-witness", "status": "created", "budgetCap": 9000 }
   ],
-  "totalEstimatedCost": 36000
+  "totalBudgetCap": 36000
 }
 ```
 
@@ -1158,7 +1158,7 @@ Stale cells with reasons — why they're stale and what would fix them.
     "staleInputs": [
       { "cell": "dispatch-code", "cellVersion": 2, "currentVersion": 4 }
     ],
-    "estimatedRecomputeCost": 18200
+    "lastRunCost": 18200
   },
   {
     "cell": "synthesis",
@@ -1167,7 +1167,7 @@ Stale cells with reasons — why they're stale and what would fix them.
     "staleInputs": [
       { "cell": "work-distribution", "cellVersion": 2, "currentVersion": 2, "note": "stale itself" }
     ],
-    "estimatedRecomputeCost": 8500
+    "lastRunCost": 8500
   }
 ]
 ```
@@ -1194,7 +1194,7 @@ An agent investigating a bad synthesis output would use the tools in this sequen
 
 4. gas_city_eval("mol-algebraic-survey", "synthesis", dryRun=true)
    → Preview the prompt. Confirm it now includes the updated work-distribution.
-   → Estimated cost: ~8500 tokens. Acceptable.
+   → Last run cost: ~8500 tokens. Budget cap not exceeded.
 
 5. gas_city_eval("mol-algebraic-survey", "synthesis")
    → Recompute. New synthesis includes convoy batching analysis.
@@ -1241,11 +1241,11 @@ Stamping a template across multiple inputs, then reducing:
        { name: "analyze-refinery", values: { module: "internal/refinery" } },
        { name: "analyze-polecat", values: { module: "internal/polecat" } }
      ])
-   → Creates 5 new cells. Total estimated cost: 62000 tokens.
+   → Creates 5 new cells. Budget cap: 80000 tokens.
 
 2. gas_city_eval_stale("mol-codebase-audit", policy="eager")
    → Evaluates all 5 in topological order (they're independent, so parallel).
-   → 62000 tokens used. All cells now fresh.
+   → 62000 tokens consumed. All cells now fresh.
 
 3. gas_city_aggregate(
      sheetName="mol-codebase-audit",
@@ -1351,8 +1351,8 @@ concurrent writes to the same cell.
 ### Budget Enforcement
 
 Token budgets are enforced at two levels:
-1. **Per-call**: `gas_city_eval` checks estimated cost against remaining budget
-   before calling the LLM.
+1. **Per-call**: `gas_city_eval` checks cumulative spend against the budget cap
+   before calling the LLM. If the cap is already exceeded, the call is rejected.
 2. **Per-sheet**: Each sheet has a configurable total budget. The server rejects
    evaluations that would exceed the sheet budget.
 

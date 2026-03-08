@@ -394,8 +394,8 @@ mol-algebraic-survey: 2 stale cells
     1. find-patterns  (~8k tok, depth:1)
     2. synthesize     (~12k tok, depth:2)
 
-  Estimated cost: ~20,000 tokens
-  Budget remaining: 36,898 tokens  ✓ sufficient
+  Last run cost: ~20,000 tokens (from prior digest)
+  Budget remaining: 36,898 tokens  ✓ cap not exceeded
 
   Tip: gt sheet recompute mol-algebraic-survey --policy budgeted
 ```
@@ -1244,7 +1244,7 @@ $ gt eval synthesize --json
 $ gt eval write-report
 Error: insufficient budget for write-report.
 
-  Estimated cost: ~15,000 tokens
+  Last run cost: ~15,000 tokens (from prior digest)
   Budget remaining: 3,200 tokens
 
   Options:

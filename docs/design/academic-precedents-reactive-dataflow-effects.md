@@ -223,7 +223,7 @@ is a direct mathematical identification.
 
 **What Gas City could adopt**:
 - *Type-level effect tracking*: Annotate cell types with their effect grades,
-  enabling static analysis of DAG cost/quality before execution.
+  enabling compositional cost accounting after execution.
 - *Coeffect grading*: Orchard's coeffects track what a computation *needs*
   from its context (capabilities, resources). This maps to cell requirements
   (model capabilities, API access, etc.).
@@ -322,10 +322,11 @@ algebra) and aren't "leaked" (consumed without contributing to any cell's
 output). The potential method maps directly: each cell has a "token potential"
 that is consumed during evaluation and transferred to downstream cells.
 
-**What Gas City could adopt**: Potential-method cost analysis. Assign token
-potential to the root of the DAG, distribute it through the graph via a linear
-type discipline, and statically verify that total potential covers all cell
-evaluations. This gives pre-execution cost guarantees.
+**What Gas City could adopt**: Linear reasoning about token flow. Ensure tokens
+aren't double-counted in the cost algebra and that every token consumed
+contributes to some cell's output. The potential method could track budget
+*caps* (allocate a maximum spend, enforce at runtime) rather than predicting
+actual consumption.
 
 ---
 
@@ -465,16 +466,17 @@ balance equations. Each process fires a predetermined number of times per period
 **Effect/cost tracking**: Token rates (consumption/production per firing) are
 the key static property. Buffer sizes can be computed at compile time.
 
-**Gas City mapping**: SDF's static token rates map to Gas City's predictable
-token consumption. If cells declare their expected token usage (model × prompt
-template → approximate tokens), a static scheduler can pre-compute the total
-cost of a molecule evaluation. This is the "thermodynamic bound" from the
-Wolfram paradigm analysis.
+**Gas City mapping**: SDF's static token rates do NOT map to Gas City. LLM
+token consumption is fundamentally unpredictable — it varies with input content,
+model behavior, and output length. Cells cannot declare token rates ahead of
+time. This is where the SDF analogy breaks: SDF processes have fixed,
+deterministic consumption rates; LLM cells do not.
 
-**What Gas City could adopt**: Static cost scheduling. Cells declare estimated
-token rates; the scheduler pre-computes total molecule cost before execution.
-This enables budget verification and optimal resource allocation at
-planning time rather than runtime.
+**What Gas City could adopt**: NOT static cost scheduling. Instead, Gas City
+should track actual token consumption after evaluation, record it in digests,
+and use historical data from prior runs to inform (not predict) budget caps.
+Runtime budget enforcement (abort if cap exceeded) is feasible; pre-execution
+cost prediction is not.
 
 ### 5.3 Demand-Driven vs. Data-Driven Evaluation
 
@@ -893,7 +895,7 @@ many dependents; (3) cells whose staleness blocks other agents.
 | `{{ref}}` wire | FRP lifting, Kahn channel, tuple space pattern | Elliott 1997, Kahn 1974, Gelernter 1985 |
 | Staleness propagation | Self-adjusting computation, Adapton dirtying, sheafification | Acar 2002, Hammer 2014, Grothendieck 1957 |
 | Effect algebra (seq/par) | Graded monad with duoidal structure | Katsumata 2014, Orchard 2020, Aguiar & Mahajan 2010 |
-| Token budget | Rate-distortion, Landauer cost, SDF token rates | Shannon 1959, Landauer 1961, Lee & Messerschmitt 1987 |
+| Token budget | Rate-distortion, Landauer cost | Shannon 1959, Landauer 1961 |
 | Quality tracking | Distortion measure, information bottleneck | Shannon 1959, Tishby 2000 |
 | Molecule formula | CHAM reaction rule, P system evolution rule | Berry & Boudol 1992, Păun 2000 |
 | Rig/membrane | CHAM membrane, P system membrane | Berry & Boudol 1992, Păun 2000 |
@@ -915,7 +917,7 @@ many dependents; (3) cells whose staleness blocks other agents.
 **Medium priority** (requires design work but high potential):
 5. **Delta-aware recomputation** (IVM) — Incremental cell updates via diff prompting
 6. **Operadic typing** — Type-safe DAG composition with modular molecules
-7. **Static cost scheduling** (SDF) — Pre-execution cost verification
+7. **Runtime budget enforcement** — Hard caps with historical cost data
 
 **Lower priority** (theoretical interest, long-term foundation):
 8. **Sheaf cohomology for DAG health** — Quantitative inconsistency measure

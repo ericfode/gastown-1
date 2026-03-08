@@ -19,11 +19,11 @@
     - Has PROVENANCE (who computed this, which model, what prompt)
 
   These are EFFECTS in the PL sense. An effect system lets us reason about
-  formula costs BEFORE execution — predict cost, bound quality, track freshness.
+  formula costs — track cost, bound quality, measure freshness.
 
   Gas Town is imperative: "Step 1, Step 2, Step 3."
   Gas City is declarative: "I need a type inventory and a synthesis."
-  The engine finds formulas, checks types, estimates cost, picks agents, schedules.
+  The engine finds formulas, checks types, tracks cost, picks agents, schedules.
   The agent doesn't follow a checklist — it inhabits a computation graph.
 -/
 
@@ -278,15 +278,15 @@ theorem Unified.Sheet.propagateStale_non_fresh
 -- SECTION 4: Effectful Sheets — Cost-Aware Computation
 -- ═══════════════════════════════════════════════════════════════
 
-/-- An effectful cell: a cell annotated with its expected computational cost.
-    This is how Gas City predicts formula cost before execution. -/
+/-- An effectful cell: a cell annotated with its observed computational cost.
+    Records actual token consumption and quality after evaluation. -/
 structure EffCell where
   cell   : Unified.Cell
   effect : Effect
   deriving Repr
 
-/-- An effectful sheet: a sheet where every cell has a known cost.
-    The total cost of evaluating the sheet is predictable. -/
+/-- An effectful sheet: a sheet where every cell has a recorded cost.
+    The total cost of the sheet is the sum of observed cell costs. -/
 structure EffSheet where
   name    : String
   cells   : List EffCell
@@ -402,7 +402,7 @@ LLM computation: `f : A → LLM B` where LLM carries:
   Budget:      `par.cost ≤ seq.cost`                 — par_le_seq
   Identity:    `zero ; f = f = f ; zero`             — seq_zero_left/right
 
-These give us PREDICTABLE COST BOUNDS for composed formulas.
+These give us COMPOSITIONAL COST ACCOUNTING for composed formulas.
 The effect algebra forms a commutative monoid under `par` and a monoid under `seq`.
 
 ### What Makes This Novel
@@ -410,7 +410,7 @@ The effect algebra forms a commutative monoid under `par` and a monoid under `se
 Existing workflow engines (Temporal, Airflow, Prefect) schedule tasks.
 Gas City reasons about COMPUTATION:
   1. Type-checked: can't wire incompatible cells
-  2. Cost-bounded: predict token usage before execution
+  2. Cost-tracked: measure and compose token usage after execution
   3. Quality-tracked: know the weakest link in a formula
   4. Reactive: staleness propagates, recomputation is targeted
   5. Verified: key properties proven in Lean 4
@@ -930,7 +930,7 @@ example :
 inductive RecomputePolicy where
   | eager                          -- Recompute immediately when stale
   | lazy                           -- Mark stale, wait for explicit trigger
-  | budgeted   (maxTokens : Nat)   -- Recompute only if estimated cost fits budget
+  | budgeted   (maxTokens : Nat)   -- Recompute only if under a token spending cap
   | convergent (maxRounds : Nat)   -- Recompute up to N times, stop if output stabilizes
   | gated                          -- Require human approval before recompute
   deriving Repr, BEq, DecidableEq
@@ -945,14 +945,14 @@ inductive RecomputeDecision where
 
 /-- Apply a recomputation policy given:
     - The policy for this cell
-    - The estimated token cost of recomputation
+    - The cumulative token spend so far
     - How many times this cell has been recomputed in the current round -/
-def applyPolicy (policy : RecomputePolicy) (estimatedCost : Nat) (roundCount : Nat)
+def applyPolicy (policy : RecomputePolicy) (spentSoFar : Nat) (roundCount : Nat)
     : RecomputeDecision :=
   match policy with
   | .eager          => .recompute
   | .lazy           => .skip
-  | .budgeted max   => if estimatedCost ≤ max then .recompute else .budgetExceeded
+  | .budgeted max   => if spentSoFar ≤ max then .recompute else .budgetExceeded
   | .convergent max => if roundCount < max then .recompute else .skip
   | .gated          => .askHuman
 
@@ -961,7 +961,7 @@ theorem eager_always_recomputes (cost rounds : Nat) :
     applyPolicy .eager cost rounds = .recompute := by
   rfl
 
-/-- Budgeted policy returns .budgetExceeded when cost exceeds the budget. -/
+/-- Budgeted policy returns .budgetExceeded when spend exceeds the cap. -/
 theorem budgeted_respects_limit (max cost rounds : Nat) (h : cost > max) :
     applyPolicy (.budgeted max) cost rounds = .budgetExceeded := by
   unfold applyPolicy
@@ -1032,10 +1032,10 @@ gives agent coordination the same interface.
    independent instances. Each instance has its own staleness. Aggregation
    folds results back. This is the spreadsheet's "fill down" for agent work.
 
-3. **Effect-bounded dispatch**: Before running a formula, predict its cost
+3. **Effect-tracked dispatch**: After running a formula, record its cost
    (tokens × quality). Choose agents by capability matching. The effect
    algebra gives provable bounds: parallel ≤ sequential, composition is
-   associative.
+   associative. Cost is observed, not predicted.
 
 ### What We Do NOT Need To Build
 

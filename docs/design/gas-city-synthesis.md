@@ -34,7 +34,7 @@ The Power User calls staleness blindness a critical pain point (Power User, Sect
 
 ### 2.4 The effect algebra captures something real and compositional
 
-All perspectives validate that (Effect, seq, par, zero) with proven associativity, commutativity, and the par_le_seq bound is a genuine algebraic structure. Tao names it precisely: a graded monad with duoidal structure (Tao, Section 1.2-1.3). Feynman interprets it as a renormalization procedure from microscale (tokens) to macroscale (formulas) (Feynman, Section 4). The Information Theorist treats it as the cost side of a cost-distortion dual (Info Theory, Section 5). The Power User wants it for predictive cost estimation before dispatch (Power User, Section 3).
+All perspectives validate that (Effect, seq, par, zero) with proven associativity, commutativity, and the par_le_seq bound is a genuine algebraic structure. Tao names it precisely: a graded monad with duoidal structure (Tao, Section 1.2-1.3). Feynman interprets it as a renormalization procedure from microscale (tokens) to macroscale (formulas) (Feynman, Section 4). The Information Theorist treats it as the cost side of a cost-distortion dual (Info Theory, Section 5). The Power User wants it for cost tracking and budget enforcement (Power User, Section 3).
 
 **Concrete agreement across 5/5 perspectives**: The effect algebra is sound, proven, and practically useful. It is the foundation layer.
 
@@ -52,11 +52,11 @@ Feynman asks the sharpest version of this question: "Why does approximate coordi
 
 **Wolfram** argues LLM agents are computationally irreducible: "You cannot predict what an LLM will output for a given prompt without running the inference" (Wolfram, Section 2). Therefore, cost estimation is fundamentally approximate, and builders should "stop trying to optimize the coordinator and start building better infrastructure for running the computation."
 
-**The Power User** directly disagrees: "The effect system in Gas City gives me seq_cost and par_cost BEFORE I dispatch. I can look at a formula and know: this will cost ~45K tokens" (Power User, Section 3). Predictive cost estimation is listed as a 10x productivity factor.
+**The Power User** wants cost visibility: real-time tracking, hard budget caps, and historical cost data from prior digests (Power User, Section 3). Cost observability is listed as a 10x productivity factor.
 
-**The Information Theorist** mediates: cost BOUNDS are possible (thermodynamic-style), but exact cost prediction is not. The effect algebra provides an upper bound, not a point estimate (Info Theory, Section 5).
+**The Information Theorist** clarifies: token cost is not predictable before execution. The effect algebra tracks actual cost after the fact and composes costs across the DAG for accounting and budgeting (Info Theory, Section 5).
 
-**Resolution**: Both are right at different scales. The effect algebra gives useful bounds (not exact predictions). Wolfram's irreducibility applies to output CONTENT, not output COST. Token cost is more predictable than semantic content.
+**Resolution**: Wolfram is right — you cannot predict token consumption before execution. LLM inference cost varies with input content, model behavior, and output length. The effect algebra is a measurement and accounting tool, not a prediction engine. Track actual cost, enforce runtime budget caps, and use historical digest data to inform (not predict) future runs.
 
 ### 3.2 Spreadsheet flatness vs. Hypergraph richness
 

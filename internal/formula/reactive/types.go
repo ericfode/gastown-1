@@ -80,7 +80,7 @@ type Cell struct {
 	Refs     []Ref    // Explicit upstream dependencies.
 
 	// Effect tracking (Gas City Sections 1, 14).
-	ExpectedEffect *FullEffect // Predicted cost and distortion. Nil = unknown.
+	ObservedEffect *FullEffect // Measured cost and distortion from last evaluation. Nil = not yet evaluated.
 }
 
 // Value holds the computed content of a cell.

@@ -127,7 +127,7 @@ All implementation stories in this plan must pass these quality gates:
 **Description**: As an operator, I want `gt prime` to show which models are available for each step and which model will be used.
 
 **Acceptance Criteria**:
-- [ ] Each step shows: constraint type, recommended model, access type, estimated cost
+- [ ] Each step shows: constraint type, recommended model, access type, last-run cost (from prior digest)
 - [ ] Fallback models are listed when primary is unavailable
 - [ ] `gt step <step-id>` executes a specific step with model routing
 - [ ] Visual indicators: `✓ subscription` vs `$0.003/K api_key`
