@@ -1,0 +1,28 @@
+name: algebraic-survey
+cells:
+  - name: extract-types
+    type: inventory
+    prompt: "Read the codebase and list all types, interfaces, and structures."
+
+  - name: find-patterns
+    type: synthesis
+    prompt: "Given this type inventory: {{extract-types}}, identify algebraic patterns."
+    refs: [extract-types]
+
+  - name: synthesize
+    type: synthesis
+    prompt: |
+      Given the type inventory: {{extract-types}}
+      And the patterns: {{find-patterns}}
+      What algebraic structure does this system form?
+    refs: [extract-types, find-patterns]
+
+  - name: write-report
+    type: text
+    prompt: "Write a report based on: {{synthesize}}"
+    refs: [synthesize]
+
+  - name: decision
+    type: decision
+    prompt: "Based on the synthesis: {{synthesize}}, should we proceed?"
+    refs: [synthesize]
