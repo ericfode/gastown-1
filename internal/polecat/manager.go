@@ -88,6 +88,7 @@ func isDoltConfigError(err error) bool {
 		strings.Contains(msg, "issue_prefix") ||
 		strings.Contains(msg, "no database") ||
 		strings.Contains(msg, "database not found") ||
+		strings.Contains(msg, "no beads database found") ||
 		strings.Contains(msg, "connection refused") ||
 		strings.Contains(msg, "configure custom types")
 }
@@ -234,7 +235,7 @@ func (m *Manager) CheckDoltHealth() error {
 			return nil
 		}
 		// If beads isn't configured at all, skip the health check
-		if strings.Contains(err.Error(), "does not exist") || errors.Is(err, beads.ErrNotInstalled) {
+		if strings.Contains(err.Error(), "does not exist") || errors.Is(err, beads.ErrNotInstalled) || strings.Contains(err.Error(), "no beads database found") {
 			return nil
 		}
 		// Fail fast on config/init errors — retrying won't help (gt-2ra)
@@ -309,7 +310,7 @@ func (m *Manager) createAgentBeadWithRetry(agentID string, fields *beads.AgentFi
 		}
 		lastErr = err
 		// If beads directory doesn't exist, this is a test/setup env — warn only
-		if strings.Contains(err.Error(), "does not exist") || errors.Is(err, beads.ErrNotInstalled) {
+		if strings.Contains(err.Error(), "does not exist") || errors.Is(err, beads.ErrNotInstalled) || strings.Contains(err.Error(), "no beads database found") {
 			style.PrintWarning("could not create agent bead (beads not configured): %v", err)
 			return nil
 		}
