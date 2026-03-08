@@ -242,7 +242,23 @@ func ComputeRedirectTarget(townRoot, worktreePath string) (string, error) {
 				} else {
 					// Relative redirect (e.g., "mayor/rig/.beads" for tracked beads).
 					// Redirect worktree directly to the final destination.
-					redirectPath = upPath + rigRedirectTarget
+					candidatePath := upPath + rigRedirectTarget
+
+					// Validate the resolved path stays within the town and points to a real directory.
+					// A bad rig redirect (e.g., "../../.beads" pointing outside the rig) would
+					// cause polecats to connect to the wrong beads database entirely.
+					resolvedCandidate := filepath.Clean(filepath.Join(worktreePath, candidatePath))
+					relToTown, err := filepath.Rel(townRoot, resolvedCandidate)
+					if err != nil || strings.HasPrefix(relToTown, "..") {
+						// Redirect escapes the town — ignore it and use the rig .beads directly.
+						fmt.Fprintf(os.Stderr, "Warning: rig redirect %q in %s escapes town root, ignoring (resolved to %s)\n",
+							rigRedirectTarget, rigRedirectPath, resolvedCandidate)
+					} else if _, statErr := os.Stat(resolvedCandidate); statErr != nil {
+						// Redirect target doesn't exist — ignore and use rig .beads directly.
+						fmt.Fprintf(os.Stderr, "Warning: rig redirect target %s does not exist, ignoring\n", resolvedCandidate)
+					} else {
+						redirectPath = candidatePath
+					}
 				}
 			}
 		}
