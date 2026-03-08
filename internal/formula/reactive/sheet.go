@@ -192,7 +192,46 @@ func (s *Sheet) Complete(cellName string, content string) error {
 	}
 	e.Value = &Value{Content: content, Version: version}
 	e.State = StateFresh
+
+	// Capture input snapshot: record which upstream versions were consumed.
+	snapshot := make(map[string]int)
+	for _, ref := range s.upstreamRefs(cellName) {
+		if re, ok := s.states[ref]; ok && re.Value != nil {
+			snapshot[ref] = re.Value.Version
+		}
+	}
+	e.InputSnapshot = snapshot
 	return nil
+}
+
+// GetInputSnapshot returns the input versions consumed for the last evaluation.
+func (s *Sheet) GetInputSnapshot(cellName string) map[string]int {
+	e, ok := s.states[cellName]
+	if !ok || e.InputSnapshot == nil {
+		return nil
+	}
+	out := make(map[string]int, len(e.InputSnapshot))
+	for k, v := range e.InputSnapshot {
+		out[k] = v
+	}
+	return out
+}
+
+// TotalEffect computes the total effect for the sheet by summing all cells
+// with known expected effects. Returns cost total and end-to-end distortion.
+func (s *Sheet) TotalEffect() FullEffect {
+	total := FullEffect{
+		Cost:       EffectZero(),
+		Distortion: PerfectDistortion(),
+	}
+
+	for _, c := range s.cells {
+		if c.ExpectedEffect != nil {
+			total.Cost = total.Cost.Seq(c.ExpectedEffect.Cost)
+			total.Distortion = total.Distortion.Seq(c.ExpectedEffect.Distortion)
+		}
+	}
+	return total
 }
 
 // Fail transitions a cell from computing to failed with an error.
