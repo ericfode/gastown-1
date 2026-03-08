@@ -250,7 +250,8 @@ theorem Unified.Sheet.propagateStale_sound
     (h_find : s.cells.find? (·.name = d) = some c)
     (h_dep : c.deps.contains changed = true) :
     (s.propagateStale changed).states d = .stale v := by
-  sorry
+  simp only [Unified.Sheet.propagateStale]
+  simp only [h_fresh, h_find, h_dep, ite_true]
 
 /-- Staleness preservation: cells that don't depend on the changed cell stay fresh. -/
 theorem Unified.Sheet.propagateStale_preserves
@@ -260,14 +261,18 @@ theorem Unified.Sheet.propagateStale_preserves
     (h_nodep : ∀ c, s.cells.find? (·.name = d) = some c →
       c.deps.contains changed = false) :
     (s.propagateStale changed).states d = .fresh v := by
-  sorry
+  simp only [Unified.Sheet.propagateStale]
+  simp only [h_fresh]
+  cases hf : s.cells.find? (·.name = d) with
+  | none => rfl
+  | some c => simp only [h_nodep c hf]; rfl
 
 /-- Non-fresh cells are unaffected by staleness propagation. -/
 theorem Unified.Sheet.propagateStale_non_fresh
     (s : Unified.Sheet) (changed d : String)
     (h : ∀ v, s.states d ≠ Unified.CellState.fresh v) :
     (s.propagateStale changed).states d = s.states d := by
-  sorry
+  simp only [Unified.Sheet.propagateStale]
 
 -- ═══════════════════════════════════════════════════════════════
 -- SECTION 4: Effectful Sheets — Cost-Aware Computation
