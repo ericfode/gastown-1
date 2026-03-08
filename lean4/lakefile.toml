@@ -1,0 +1,10 @@
+name = "BeadCalculus"
+version = "0.1.0"
+defaultTargets = ["beadcalculus"]
+
+[[lean_lib]]
+name = "BeadCalculus"
+
+[[lean_exe]]
+name = "beadcalculus"
+root = "Main"
