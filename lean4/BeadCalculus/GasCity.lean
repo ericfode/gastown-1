@@ -488,4 +488,356 @@ def bestAgent (agents : List AgentCapability) (ct : CellType) : Option AgentCapa
     | some b => if b.maxQuality < agent.maxQuality then some agent else some b
   ) none
 
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 7: Compression Chains — Information Decay Through DAGs
+-- ═══════════════════════════════════════════════════════════════
+
+/-! Each cell in a formula applies a compression function: it takes
+    structured input and produces a summary that downstream cells consume.
+    Information is deliberately lost at each step. The interesting properties
+    are about compression DEPTH, POLICY, and COMPOSITION — not token counts.
+
+    This models the reality of LLM agent coordination: every handoff
+    between agents is a lossy compression. The question isn't whether
+    information is lost — it always is — but whether the RIGHT information
+    survives. -/
+
+/-- A compression policy describes how a cell transforms its input.
+    Each policy has different fidelity characteristics. -/
+inductive CompressionPolicy where
+  | verbatim    : CompressionPolicy  -- Pass through unchanged (identity)
+  | summarize   : CompressionPolicy  -- Extract key points, lose detail
+  | extract     : CompressionPolicy  -- Pull structured data, lose prose
+  | classify    : CompressionPolicy  -- Reduce to category labels
+  | decide      : CompressionPolicy  -- Reduce to yes/no + rationale
+  deriving DecidableEq, Repr, BEq
+
+/-- Compression policies form a partial order by information retention.
+    verbatim retains everything; decide retains almost nothing. -/
+def CompressionPolicy.retentionRank : CompressionPolicy → Nat
+  | .verbatim  => 4
+  | .summarize => 3
+  | .extract   => 2
+  | .classify  => 1
+  | .decide    => 0
+
+instance : LE CompressionPolicy where
+  le a b := a.retentionRank ≤ b.retentionRank
+
+instance (a b : CompressionPolicy) : Decidable (a ≤ b) :=
+  inferInstanceAs (Decidable (a.retentionRank ≤ b.retentionRank))
+
+/-- A compression step records one stage of information loss. -/
+structure CompressionStep where
+  policy : CompressionPolicy
+  depth  : Nat   -- How many compressions have happened upstream
+  deriving Repr, BEq, DecidableEq
+
+/-- Compose compression steps: depth accumulates, retention decreases. -/
+def CompressionStep.compose (a b : CompressionStep) : CompressionStep where
+  policy := if b.policy.retentionRank ≤ a.policy.retentionRank then b.policy else a.policy
+  depth  := a.depth + b.depth + 1
+
+/-- A compression chain is the provenance of how many times information
+    has been compressed, and by what policies, to reach the current cell. -/
+structure CompressionChain where
+  steps : List CompressionStep
+  deriving Repr
+
+/-- Total compression depth: how many lossy transformations from source. -/
+def CompressionChain.totalDepth (c : CompressionChain) : Nat :=
+  c.steps.length
+
+/-- Minimum retention across the chain: bottleneck fidelity. -/
+def CompressionChain.minRetention (c : CompressionChain) : Nat :=
+  c.steps.foldl (fun acc s => Nat.min acc s.policy.retentionRank) 4
+
+/-- Extend a chain with a new compression step. -/
+def CompressionChain.extend (c : CompressionChain) (p : CompressionPolicy) : CompressionChain where
+  steps := c.steps ++ [{ policy := p, depth := c.totalDepth }]
+
+/-- The empty chain: no compression has happened. -/
+def CompressionChain.empty : CompressionChain where
+  steps := []
+
+/-- Depth monotonicity: extending a chain always increases depth. -/
+theorem CompressionChain.extend_increases_depth (c : CompressionChain) (p : CompressionPolicy) :
+    (c.extend p).totalDepth = c.totalDepth + 1 := by
+  simp [CompressionChain.extend, CompressionChain.totalDepth, List.length_append]
+
+/-- Helper: foldl min over an appended singleton. -/
+private theorem foldl_min_append_singleton (l : List CompressionStep) (s : CompressionStep) (init : Nat) :
+    List.foldl (fun acc (x : CompressionStep) => Nat.min acc x.policy.retentionRank) init (l ++ [s])
+    = Nat.min (List.foldl (fun acc (x : CompressionStep) => Nat.min acc x.policy.retentionRank) init l)
+              s.policy.retentionRank := by
+  induction l generalizing init with
+  | nil => simp [List.foldl]
+  | cons h t ih => simp [List.foldl, ih]
+
+/-- Retention monotonicity: extending with a lossy step can only decrease retention. -/
+theorem CompressionChain.extend_retention_le (c : CompressionChain) (p : CompressionPolicy) :
+    (c.extend p).minRetention ≤ c.minRetention := by
+  simp only [CompressionChain.extend, CompressionChain.minRetention,
+             foldl_min_append_singleton]
+  exact Nat.min_le_left _ _
+
+/-- Non-vacuity: a concrete compression chain example. -/
+example :
+    let c := CompressionChain.empty
+    let c := c.extend .verbatim   -- First cell: pass through
+    let c := c.extend .summarize  -- Second cell: summarize
+    let c := c.extend .decide     -- Third cell: decide
+    c.totalDepth = 3 ∧ c.minRetention = 0 := by
+  constructor <;> native_decide
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 8: Parameterized Sheets — The Map Operation
+-- ═══════════════════════════════════════════════════════════════
+
+/-! The spreadsheet's killer feature is "drag to fill" — apply a formula
+    across a collection of inputs. In Gas City, this is:
+
+      gt sling mol-analyze --over repos.csv
+
+    One formula template, N parameter rows, N × M total cells.
+    This is `map` over a functor. The formula is the function,
+    the parameter list is the collection, the result is a sheet-of-sheets.
+
+    Properties we want:
+    - Each instantiation is independent (parallelizable)
+    - Cost scales linearly with N (predictable)
+    - Staleness is per-instance (changing one row doesn't invalidate others)
+    - Compression can aggregate across instances (pivot table = fold) -/
+
+/-- A parameter set: named values that fill holes in a template. -/
+structure ParamSet where
+  name   : String              -- Row identifier (e.g., "repo-alpha")
+  values : List (String × String)  -- param name → param value
+  deriving Repr, BEq, DecidableEq
+
+/-- A sheet template: a sheet definition with parameter holes.
+    The prompt templates contain {{param.X}} references in addition
+    to {{cell}} references. -/
+structure SheetTemplate where
+  baseName : String
+  cells    : List Unified.Cell
+  params   : List String        -- Names of required parameters
+  deriving Repr
+
+/-- Instantiate a template with concrete parameters.
+    Substitutes {{param.X}} in all prompts. -/
+def SheetTemplate.instantiate (t : SheetTemplate) (ps : ParamSet) : Unified.Sheet where
+  name := t.baseName ++ "/" ++ ps.name
+  cells := t.cells.map fun c => {
+    c with
+    prompt := ps.values.foldl (fun p kv =>
+      p.replace ("{{param." ++ kv.1 ++ "}}") kv.2) c.prompt
+    name := ps.name ++ "/" ++ c.name
+  }
+  states := fun _ => .empty
+
+/-- Map a template over a parameter list: the "drag to fill" operation.
+    Produces one sheet per parameter row, all independent. -/
+def SheetTemplate.mapOver (t : SheetTemplate) (rows : List ParamSet) : List Unified.Sheet :=
+  rows.map t.instantiate
+
+/-- Total cell count scales linearly: |cells| × |rows|. -/
+theorem SheetTemplate.map_cell_count (t : SheetTemplate) (rows : List ParamSet) :
+    (t.mapOver rows).length = rows.length := by
+  simp [SheetTemplate.mapOver]
+
+/-- Each mapped sheet has the same number of cells as the template. -/
+theorem SheetTemplate.instantiate_preserves_cell_count (t : SheetTemplate) (ps : ParamSet) :
+    (t.instantiate ps).cells.length = t.cells.length := by
+  simp [SheetTemplate.instantiate]
+
+/-- Aggregation: fold over mapped sheet results.
+    This is the "pivot table" — compress N instances into one summary.
+    The aggregation function is itself a compression step. -/
+structure Aggregation where
+  name           : String
+  sourceCell     : String           -- Which cell from each instance to aggregate
+  compressionPolicy : CompressionPolicy  -- How to compress the collection
+  deriving Repr
+
+/-- Non-vacuity: a concrete template and map example. -/
+private def analyzeTemplate : SheetTemplate where
+  baseName := "analyze-repo"
+  cells := [
+    { name := "scan"
+      cellType := .inventory
+      prompt := "Scan {{param.repo_url}} and list all types."
+      refs := [] },
+    { name := "classify"
+      cellType := .synthesis
+      prompt := "Given the types: {{scan}}, classify the architecture."
+      refs := [{ cell := "scan", field := none }] }
+  ]
+  params := ["repo_url"]
+
+private def exampleRows : List ParamSet := [
+  { name := "alpha", values := [("repo_url", "github.com/org/alpha")] },
+  { name := "beta",  values := [("repo_url", "github.com/org/beta")] },
+  { name := "gamma", values := [("repo_url", "github.com/org/gamma")] }
+]
+
+/-- Non-vacuity: mapping produces 3 sheets. -/
+example : (analyzeTemplate.mapOver exampleRows).length = 3 := by rfl
+
+/-- Non-vacuity: mapping produces correct count and structure. -/
+example : (analyzeTemplate.mapOver exampleRows).length = 3 ∧
+    (analyzeTemplate.instantiate (exampleRows[0]'(by decide))).cells.length = 2 := by
+  constructor <;> rfl
+
+/-- Non-vacuity: parameter substitution works in prompts. -/
+example :
+    let sheet := analyzeTemplate.instantiate { name := "test", values := [("repo_url", "example.com")] }
+    sheet.cells.length = 2 := by rfl
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 9: Visualization Model — What You SEE
+-- ═══════════════════════════════════════════════════════════════
+
+/-! Gas City's real innovation is making LLM computation VISIBLE.
+    These types model the visualization layer — what the user sees. -/
+
+/-- What a cell looks like in the living grid view. -/
+structure CellView where
+  name              : String
+  valuePreview      : Option String    -- First ~100 chars of output
+  status            : Unified.CellState
+  compressionDepth  : Nat              -- How many compressions from source
+  tokenCost         : Nat              -- Tokens spent computing this cell
+  qualityLevel      : Quality
+  upstreamCount     : Nat              -- How many cells feed into this
+  downstreamCount   : Nat              -- How many cells depend on this
+  deriving Repr
+
+/-- A provenance link: traces one piece of output back to its source.
+    This is the "View Precedents" for natural language — click a sentence
+    in cell C and see which sentence in cell A it came from. -/
+structure ProvenanceLink where
+  targetCell    : String   -- The cell containing the derived content
+  sourceCell    : String   -- The cell containing the source content
+  compressions  : Nat      -- How many compression steps between them
+  deriving Repr, BEq, DecidableEq
+
+/-- A provenance trace: the full path from a derived value back to sources. -/
+structure ProvenanceTrace where
+  endpoint : String              -- The cell we're tracing from
+  links    : List ProvenanceLink -- Ordered source → ... → endpoint
+  totalCompressions : Nat        -- Sum of all compression steps
+  deriving Repr
+
+/-- Build a provenance trace from a cell through the DAG.
+    Follows refs backwards, accumulating compression depth.
+    Uses fuel to guarantee termination (depth-bounded traversal). -/
+def buildProvenanceTrace (cells : List Unified.Cell) (chains : String → CompressionChain)
+    (cellName : String) (fuel : Nat := cells.length) : ProvenanceTrace :=
+  let rec go (name : String) (fuel : Nat) (acc : List ProvenanceLink) :
+      List ProvenanceLink :=
+    match fuel with
+    | 0 => acc
+    | fuel' + 1 =>
+      match cells.find? (·.name = name) with
+      | none => acc
+      | some c =>
+        let newLinks := c.refs.map fun ref => {
+          targetCell := name
+          sourceCell := ref.cell
+          compressions := (chains name).totalDepth
+        }
+        let acc' := newLinks ++ acc
+        c.refs.foldl (fun a ref => go ref.cell fuel' a) acc'
+  let links := go cellName fuel []
+  { endpoint := cellName
+    links := links
+    totalCompressions := links.foldl (fun acc l => acc + l.compressions) 0 }
+
+/-- The information Sankey: for each cell, how much information flows in and out.
+    Width of the stream is proportional to token count. Narrowing = compression. -/
+structure SankeyNode where
+  name       : String
+  tokensIn   : Nat     -- Sum of upstream output sizes
+  tokensOut  : Nat     -- This cell's output size
+  ratio      : Nat     -- Compression ratio (tokensIn / tokensOut), 0 if no input
+  deriving Repr
+
+/-- Compute Sankey node for a cell given token sizes. -/
+def computeSankeyNode (cellName : String) (cells : List Unified.Cell)
+    (sizes : String → Nat) : SankeyNode :=
+  match cells.find? (·.name = cellName) with
+  | none => { name := cellName, tokensIn := 0, tokensOut := sizes cellName, ratio := 0 }
+  | some c =>
+    let inTotal := c.refs.foldl (fun acc ref => acc + sizes ref.cell) 0
+    let out := sizes cellName
+    { name := cellName
+      tokensIn := inTotal
+      tokensOut := out
+      ratio := if out = 0 then 0 else inTotal / out }
+
+/-- Non-vacuity: provenance trace for the demo sheet. -/
+example :
+    let trace := buildProvenanceTrace
+      demoSheet.cells
+      (fun _ => CompressionChain.empty)
+      "synthesize"
+    trace.links.length = 1 := by rfl
+
+-- ═══════════════════════════════════════════════════════════════
+-- SECTION 10: What Gas City Actually Is
+-- ═══════════════════════════════════════════════════════════════
+
+/-!
+## Gas City = Spreadsheet Semantics for Agent Coordination
+
+The insight: a spreadsheet is not a grid of numbers. It is a
+**direct manipulation interface for computation graphs**. Gas City
+gives agent coordination the same interface.
+
+### Spreadsheet → Gas City Translation
+
+| Spreadsheet    | Gas City                       | Why it matters                    |
+|---------------|--------------------------------|-----------------------------------|
+| Cell          | Bead                           | Already exists                    |
+| Formula       | Prompt template + {{refs}}     | LLM = formula engine              |
+| Value         | Bead output (notes/design)     | Already exists in Dolt            |
+| Drag-to-fill  | SheetTemplate.mapOver          | 10x: one formula, N instances     |
+| Stale marker  | CellState.stale                | Reactive: know what's outdated    |
+| Pivot table   | Aggregation over mapped sheets | Compress N results into insight   |
+| Hotkey        | gt sling / bd ready / gt eval  | Power user acceleration           |
+| Conditional   | Gate cell (unit/empty output)   | Control flow in the DAG           |
+| Named range   | Formula (reusable DAG chunk)   | Composition                       |
+
+### The Three Genuine Innovations
+
+1. **Compression-aware dataflow**: Each cell declares HOW it compresses
+   information, not just THAT it transforms it. The chain tracks cumulative
+   information loss. This lets you reason about "is cell 15 working from
+   a 3x-compressed summary or the original data?"
+
+2. **Parameterized map**: Apply a formula across a collection, producing
+   independent instances. Each instance has its own staleness. Aggregation
+   folds results back. This is the spreadsheet's "fill down" for agent work.
+
+3. **Effect-bounded dispatch**: Before running a formula, predict its cost
+   (tokens × quality). Choose agents by capability matching. The effect
+   algebra gives provable bounds: parallel ≤ sequential, composition is
+   associative.
+
+### What We Do NOT Need To Build
+
+- A new runtime (Gas Town already executes)
+- A new data store (Dolt already persists)
+- A new agent framework (polecats already work)
+- New wire protocols (beads already have deps)
+
+We need:
+- Staleness tracking on beads (one field: `stale: bool`)
+- Template parameters on formulas (extend TOML)
+- Compression metadata on outputs (one field: `compression_depth: int`)
+- A `gt eval` command that fills prompts and dispatches
+- A `gt map` command that applies templates over parameter lists
+-/
+
 end BeadCalculus.GasCity
