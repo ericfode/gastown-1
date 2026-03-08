@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gas City — Staleness Wave Propagation</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --fresh: #3fb950;
+    --fresh-glow: rgba(63, 185, 80, 0.4);
+    --stale: #d29922;
+    --stale-glow: rgba(210, 153, 34, 0.5);
+    --computing: #58a6ff;
+    --computing-glow: rgba(88, 166, 255, 0.5);
+    --wire: #484f58;
+    --wire-active: #8b949e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 2rem;
+  }
+
+  .controls {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  button:hover:not(:disabled) {
+    border-color: var(--text-dim);
+    background: #1c2129;
+  }
+
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  button.primary {
+    background: #238636;
+    border-color: #2ea043;
+    color: #fff;
+  }
+
+  button.primary:hover:not(:disabled) {
+    background: #2ea043;
+    border-color: #3fb950;
+  }
+
+  button.amber {
+    background: #9e6a03;
+    border-color: #d29922;
+    color: #fff;
+  }
+
+  button.amber:hover:not(:disabled) {
+    background: #bb8009;
+  }
+
+  .canvas {
+    position: relative;
+    width: 900px;
+    height: 480px;
+  }
+
+  svg.wires {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  svg.wires line {
+    stroke: var(--wire);
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+
+  svg.wires .wire-pulse {
+    stroke: var(--stale);
+    stroke-width: 3;
+    opacity: 0;
+  }
+
+  .cell {
+    position: absolute;
+    width: 160px;
+    padding: 1rem;
+    background: var(--surface);
+    border: 2px solid var(--fresh);
+    border-radius: 10px;
+    text-align: center;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 0 12px var(--fresh-glow), inset 0 0 12px rgba(63, 185, 80, 0.05);
+  }
+
+  .cell .name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cell .version {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+  }
+
+  .cell .badge {
+    display: none;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    margin-top: 0.4rem;
+    text-transform: uppercase;
+  }
+
+  /* States */
+  .cell.fresh {
+    border-color: var(--fresh);
+    box-shadow: 0 0 12px var(--fresh-glow), inset 0 0 12px rgba(63, 185, 80, 0.05);
+  }
+
+  .cell.fresh .badge { display: none; }
+
+  .cell.computing {
+    border-color: var(--computing);
+    box-shadow: 0 0 20px var(--computing-glow), inset 0 0 16px rgba(88, 166, 255, 0.08);
+    animation: computePulse 0.6s ease-in-out infinite alternate;
+  }
+
+  .cell.computing .badge {
+    display: inline-block;
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--computing);
+  }
+
+  .cell.stale {
+    border-color: var(--stale);
+    box-shadow: 0 0 12px var(--stale-glow), inset 0 0 12px rgba(210, 153, 34, 0.05);
+  }
+
+  .cell.stale .badge {
+    display: inline-block;
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--stale);
+  }
+
+  .cell.stale-hit {
+    animation: staleImpact 0.5s ease-out;
+  }
+
+  .cell.fresh-hit {
+    animation: freshImpact 0.4s ease-out;
+  }
+
+  @keyframes computePulse {
+    from { box-shadow: 0 0 12px var(--computing-glow), inset 0 0 8px rgba(88, 166, 255, 0.05); }
+    to   { box-shadow: 0 0 28px var(--computing-glow), inset 0 0 20px rgba(88, 166, 255, 0.1); }
+  }
+
+  @keyframes staleImpact {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.06); box-shadow: 0 0 30px var(--stale-glow); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes freshImpact {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.04); box-shadow: 0 0 24px var(--fresh-glow); }
+    100% { transform: scale(1); }
+  }
+
+  /* Wire pulse animation */
+  @keyframes wirePulse {
+    0%   { stroke-dashoffset: 40; opacity: 0; }
+    20%  { opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 0; }
+  }
+
+  .wire-pulse.active {
+    stroke-dasharray: 40;
+    animation: wirePulse 0.4s ease-out forwards;
+  }
+
+  .wire-pulse.active-fresh {
+    stroke: var(--computing);
+    stroke-dasharray: 40;
+    animation: wirePulse 0.4s ease-out forwards;
+  }
+
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 2rem;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid;
+  }
+
+  .legend-dot.fresh { border-color: var(--fresh); box-shadow: 0 0 6px var(--fresh-glow); }
+  .legend-dot.stale { border-color: var(--stale); box-shadow: 0 0 6px var(--stale-glow); }
+  .legend-dot.computing { border-color: var(--computing); box-shadow: 0 0 6px var(--computing-glow); }
+</style>
+</head>
+<body>
+
+<h1>Gas City — Staleness Wave Propagation</h1>
+<p class="subtitle">Click "Trigger Change" to watch the amber wave ripple through the DAG</p>
+
+<div class="controls">
+  <button id="btn-trigger" class="primary" onclick="triggerChange()">Trigger Change</button>
+  <button id="btn-recompute" class="amber" onclick="recomputeAll()" disabled>Recompute All Stale</button>
+  <button id="btn-reset" onclick="resetAll()">Reset</button>
+</div>
+
+<div class="canvas" id="canvas">
+  <svg class="wires" id="wires"></svg>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot fresh"></div> Fresh</div>
+  <div class="legend-item"><div class="legend-dot computing"></div> Computing</div>
+  <div class="legend-item"><div class="legend-dot stale"></div> Stale</div>
+</div>
+
+<script>
+// DAG definition
+const cells = {
+  'extract-types':  { x: 60,  y: 200, label: 'extract-types',  version: 1 },
+  'find-patterns':  { x: 300, y: 80,  label: 'find-patterns',  version: 1 },
+  'synthesize':     { x: 300, y: 320, label: 'synthesize',      version: 1 },
+  'write-report':   { x: 560, y: 80,  label: 'write-report',   version: 1 },
+  'decision':       { x: 560, y: 320, label: 'decision',        version: 1 },
+};
+
+const edges = [
+  ['extract-types', 'find-patterns'],
+  ['extract-types', 'synthesize'],
+  ['find-patterns', 'synthesize'],
+  ['synthesize',    'write-report'],
+  ['synthesize',    'decision'],
+];
+
+// Downstream adjacency for wave propagation
+const downstream = {};
+for (const id of Object.keys(cells)) downstream[id] = [];
+for (const [from, to] of edges) downstream[from].push(to);
+
+// Topological order for recompute
+const topoOrder = ['extract-types', 'find-patterns', 'synthesize', 'write-report', 'decision'];
+
+// State
+let cellStates = {};  // 'fresh' | 'stale' | 'computing'
+let animating = false;
+
+// --- DOM Setup ---
+const canvas = document.getElementById('canvas');
+const svgWires = document.getElementById('wires');
+
+// Create cells
+for (const [id, cfg] of Object.entries(cells)) {
+  const el = document.createElement('div');
+  el.className = 'cell fresh';
+  el.id = `cell-${id}`;
+  el.style.left = cfg.x + 'px';
+  el.style.top = cfg.y + 'px';
+  el.innerHTML = `
+    <div class="name">${cfg.label}</div>
+    <div class="version">v${cfg.version}</div>
+    <div class="badge">FRESH</div>
+  `;
+  canvas.appendChild(el);
+  cellStates[id] = 'fresh';
+}
+
+// Create wires
+function getCellCenter(id) {
+  const c = cells[id];
+  return { x: c.x + 80, y: c.y + 35 };
+}
+
+function getCellEdge(fromId, toId) {
+  const from = cells[fromId];
+  const to = cells[toId];
+  const fx = from.x + 160;  // right edge
+  const fy = from.y + 35;   // vertical center
+  const tx = to.x;           // left edge
+  const ty = to.y + 35;
+  return { x1: fx, y1: fy, x2: tx, y2: ty };
+}
+
+for (const [from, to] of edges) {
+  const pts = getCellEdge(from, to);
+
+  // Background wire
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', pts.x1);
+  line.setAttribute('y1', pts.y1);
+  line.setAttribute('x2', pts.x2);
+  line.setAttribute('y2', pts.y2);
+  svgWires.appendChild(line);
+
+  // Pulse overlay
+  const pulse = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  pulse.setAttribute('x1', pts.x1);
+  pulse.setAttribute('y1', pts.y1);
+  pulse.setAttribute('x2', pts.x2);
+  pulse.setAttribute('y2', pts.y2);
+  pulse.classList.add('wire-pulse');
+  pulse.id = `wire-${from}-${to}`;
+  svgWires.appendChild(pulse);
+}
+
+// --- Animation Helpers ---
+function setCellState(id, state, badgeText) {
+  const el = document.getElementById(`cell-${id}`);
+  el.className = 'cell ' + state;
+  cellStates[id] = state;
+
+  const badge = el.querySelector('.badge');
+  if (badgeText) {
+    badge.textContent = badgeText;
+  }
+}
+
+function addHitEffect(id, cls) {
+  const el = document.getElementById(`cell-${id}`);
+  el.classList.remove('stale-hit', 'fresh-hit');
+  // Force reflow to restart animation
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+function pulseWire(from, to, cls) {
+  const wire = document.getElementById(`wire-${from}-${to}`);
+  if (!wire) return;
+  wire.classList.remove('active', 'active-fresh');
+  void wire.offsetWidth;
+  wire.classList.add(cls);
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function setButtons(trigger, recompute, reset) {
+  document.getElementById('btn-trigger').disabled = !trigger;
+  document.getElementById('btn-recompute').disabled = !recompute;
+  document.getElementById('btn-reset').disabled = !reset;
+}
+
+function updateVersion(id) {
+  cells[id].version++;
+  const el = document.getElementById(`cell-${id}`);
+  el.querySelector('.version').textContent = `v${cells[id].version}`;
+}
+
+// --- Main Animations ---
+
+async function triggerChange() {
+  if (animating) return;
+  animating = true;
+  setButtons(false, false, false);
+
+  // Step 1: extract-types recomputes (blue flash)
+  setCellState('extract-types', 'computing', 'COMPUTING');
+  await sleep(1000);
+
+  // Step 2: extract-types done — fresh with new version
+  updateVersion('extract-types');
+  setCellState('extract-types', 'fresh', 'FRESH');
+  addHitEffect('extract-types', 'fresh-hit');
+  await sleep(300);
+
+  // Step 3: Wave hits tier 1 — find-patterns and synthesize go stale
+  const tier1 = downstream['extract-types'];
+  for (const t of tier1) {
+    pulseWire('extract-types', t, 'active');
+  }
+  await sleep(150);
+  for (const t of tier1) {
+    setCellState(t, 'stale', 'STALE');
+    addHitEffect(t, 'stale-hit');
+  }
+  await sleep(300);
+
+  // Step 4: Wave hits tier 2 — write-report and decision go stale
+  // These come from synthesize
+  const tier2 = downstream['synthesize'];
+  for (const t of tier2) {
+    pulseWire('synthesize', t, 'active');
+  }
+  await sleep(150);
+  for (const t of tier2) {
+    setCellState(t, 'stale', 'STALE');
+    addHitEffect(t, 'stale-hit');
+  }
+
+  await sleep(200);
+  animating = false;
+  setButtons(false, true, true);
+}
+
+async function recomputeAll() {
+  if (animating) return;
+  animating = true;
+  setButtons(false, false, false);
+
+  // Recompute stale cells in topological order
+  const staleCells = topoOrder.filter(id => cellStates[id] === 'stale');
+
+  for (const id of staleCells) {
+    // Pulse incoming wires
+    for (const [from, to] of edges) {
+      if (to === id) pulseWire(from, to, 'active-fresh');
+    }
+
+    setCellState(id, 'computing', 'COMPUTING');
+    await sleep(600);
+
+    updateVersion(id);
+    setCellState(id, 'fresh', 'FRESH');
+    addHitEffect(id, 'fresh-hit');
+    await sleep(250);
+  }
+
+  animating = false;
+  setButtons(true, false, true);
+}
+
+function resetAll() {
+  if (animating) return;
+  for (const id of Object.keys(cells)) {
+    cells[id].version = 1;
+    setCellState(id, 'fresh', 'FRESH');
+    const el = document.getElementById(`cell-${id}`);
+    el.querySelector('.version').textContent = 'v1';
+    el.querySelector('.badge').style.display = '';
+  }
+  // Clear any lingering pulse animations
+  document.querySelectorAll('.wire-pulse').forEach(w => {
+    w.classList.remove('active', 'active-fresh');
+  });
+  setButtons(true, false, true);
+}
+</script>
+</body>
+</html>
