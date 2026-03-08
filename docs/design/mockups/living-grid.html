@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gas City Living Grid</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-deep: #0a0b0f;
+    --bg-surface: #12131a;
+    --bg-elevated: #1a1b24;
+    --bg-hover: #22232e;
+    --border-dim: #2a2b38;
+    --border-mid: #3a3b4a;
+    --text-primary: #e8e9f0;
+    --text-secondary: #8b8d9e;
+    --text-dim: #5a5c6e;
+
+    --status-fresh: #34d399;
+    --status-fresh-bg: rgba(52, 211, 153, 0.08);
+    --status-fresh-border: rgba(52, 211, 153, 0.4);
+    --status-stale: #fbbf24;
+    --status-stale-bg: rgba(251, 191, 36, 0.08);
+    --status-stale-border: rgba(251, 191, 36, 0.4);
+    --status-computing: #60a5fa;
+    --status-computing-bg: rgba(96, 165, 250, 0.08);
+    --status-computing-border: rgba(96, 165, 250, 0.4);
+    --status-empty: #6b7280;
+    --status-empty-bg: rgba(107, 114, 128, 0.06);
+    --status-empty-border: rgba(107, 114, 128, 0.3);
+    --status-failed: #f87171;
+
+    --quality-good: #34d399;
+    --quality-adequate: #fbbf24;
+    --quality-draft: #6b7280;
+
+    --wire-color: #3a3b4a;
+    --wire-active: #60a5fa;
+    --wire-upstream: #fbbf24;
+    --wire-downstream: #34d399;
+
+    --cell-width: 280px;
+    --cell-gap-x: 120px;
+    --cell-gap-y: 24px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: 'DM Sans', sans-serif;
+    overflow: hidden;
+  }
+
+  /* ─── Status Bar ─── */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    user-select: none;
+    z-index: 100;
+    position: relative;
+  }
+
+  .status-bar .left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .status-bar .sheet-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+  }
+
+  .status-bar .sheet-name::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--status-computing);
+    margin-right: 8px;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  .status-bar .metric {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+  }
+
+  .status-bar .metric .count {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .status-bar .metric .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .status-bar .right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: var(--text-dim);
+  }
+
+  .status-bar .budget {
+    color: var(--text-secondary);
+  }
+
+  .status-bar .budget .value {
+    color: var(--status-computing);
+    font-weight: 500;
+  }
+
+  /* ─── Grid Container ─── */
+  .grid-viewport {
+    position: relative;
+    width: 100%;
+    height: calc(100vh - 42px);
+    overflow: auto;
+    cursor: grab;
+  }
+
+  .grid-viewport:active { cursor: grabbing; }
+
+  .grid-viewport::-webkit-scrollbar { width: 6px; height: 6px; }
+  .grid-viewport::-webkit-scrollbar-track { background: var(--bg-deep); }
+  .grid-viewport::-webkit-scrollbar-thumb { background: var(--border-dim); border-radius: 3px; }
+  .grid-viewport::-webkit-scrollbar-thumb:hover { background: var(--border-mid); }
+
+  .grid-canvas {
+    position: relative;
+    min-width: 100%;
+    min-height: 100%;
+    padding: 60px 80px 120px;
+  }
+
+  /* ─── SVG Wire Layer ─── */
+  .wire-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .wire {
+    fill: none;
+    stroke: var(--wire-color);
+    stroke-width: 1.5;
+    transition: stroke 0.3s ease, stroke-width 0.3s ease, opacity 0.3s ease;
+  }
+
+  .wire.upstream {
+    stroke: var(--wire-upstream);
+    stroke-width: 2;
+    filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.3));
+  }
+
+  .wire.downstream {
+    stroke: var(--wire-downstream);
+    stroke-width: 2;
+    filter: drop-shadow(0 0 4px rgba(52, 211, 153, 0.3));
+  }
+
+  .wire.dimmed {
+    opacity: 0.15;
+  }
+
+  .wire-dot {
+    fill: var(--wire-color);
+    transition: fill 0.3s ease, r 0.3s ease;
+  }
+
+  .wire-dot.upstream { fill: var(--wire-upstream); }
+  .wire-dot.downstream { fill: var(--wire-downstream); }
+
+  /* ─── Animated flow particles ─── */
+  @keyframes flow-particle {
+    0% { offset-distance: 0%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+
+  .flow-particle {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--status-computing);
+    position: absolute;
+    offset-rotate: 0deg;
+    animation: flow-particle 3s linear infinite;
+    pointer-events: none;
+    z-index: 2;
+    box-shadow: 0 0 6px var(--status-computing);
+  }
+
+  /* ─── Cell Nodes ─── */
+  .cell-layer {
+    position: relative;
+    z-index: 10;
+  }
+
+  .cell {
+    position: absolute;
+    width: var(--cell-width);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-dim);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.2s ease;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  .cell::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 6px 6px 0 0;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .cell[data-status="fresh"]::before {
+    background: var(--status-fresh);
+    box-shadow: 0 0 12px var(--status-fresh-border);
+  }
+  .cell[data-status="stale"]::before {
+    background: var(--status-stale);
+    box-shadow: 0 0 12px var(--status-stale-border);
+  }
+  .cell[data-status="computing"]::before {
+    background: var(--status-computing);
+    box-shadow: 0 0 12px var(--status-computing-border);
+    animation: computing-glow 2s ease-in-out infinite;
+  }
+  .cell[data-status="empty"]::before {
+    background: var(--status-empty);
+  }
+
+  @keyframes computing-glow {
+    0%, 100% { box-shadow: 0 0 8px var(--status-computing-border); }
+    50% { box-shadow: 0 0 20px rgba(96, 165, 250, 0.6); }
+  }
+
+  .cell:hover {
+    border-color: var(--border-mid);
+    background: var(--bg-elevated);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+
+  .cell.highlight-source {
+    border-color: var(--wire-upstream);
+    box-shadow: 0 0 0 1px var(--wire-upstream), 0 4px 20px rgba(251, 191, 36, 0.15);
+  }
+
+  .cell.highlight-target {
+    border-color: var(--wire-downstream);
+    box-shadow: 0 0 0 1px var(--wire-downstream), 0 4px 20px rgba(52, 211, 153, 0.15);
+  }
+
+  .cell.dimmed {
+    opacity: 0.3;
+  }
+
+  .cell.expanded {
+    z-index: 50;
+    width: 480px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px var(--border-mid);
+  }
+
+  /* ─── Cell Header ─── */
+  .cell-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 8px;
+  }
+
+  .cell-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+  }
+
+  .cell-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .badge-status {
+    color: var(--bg-deep);
+  }
+
+  .badge-status[data-status="fresh"] { background: var(--status-fresh); }
+  .badge-status[data-status="stale"] { background: var(--status-stale); color: #000; }
+  .badge-status[data-status="computing"] { background: var(--status-computing); }
+  .badge-status[data-status="empty"] { background: var(--status-empty); }
+
+  .badge-quality {
+    border: 1px solid;
+  }
+  .badge-quality[data-quality="good"] { color: var(--quality-good); border-color: rgba(52,211,153,0.3); }
+  .badge-quality[data-quality="adequate"] { color: var(--quality-adequate); border-color: rgba(251,191,36,0.3); }
+  .badge-quality[data-quality="draft"] { color: var(--quality-draft); border-color: rgba(107,114,128,0.3); }
+
+  /* ─── Cell Metrics Row ─── */
+  .cell-metrics {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .cell-metrics .metric-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .cell-metrics .metric-value {
+    color: var(--text-secondary);
+  }
+
+  /* ─── Cell Value Preview ─── */
+  .cell-value {
+    padding: 0 12px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    max-height: 54px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .cell-value::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    background: linear-gradient(transparent, var(--bg-surface));
+    pointer-events: none;
+    transition: background 0.2s ease;
+  }
+
+  .cell:hover .cell-value::after {
+    background: linear-gradient(transparent, var(--bg-elevated));
+  }
+
+  .cell-value .computing-text {
+    color: var(--status-computing);
+    font-style: italic;
+  }
+
+  .cell-value .computing-text::after {
+    content: '';
+    animation: ellipsis 1.5s steps(3) infinite;
+  }
+
+  @keyframes ellipsis {
+    0% { content: ''; }
+    33% { content: '.'; }
+    66% { content: '..'; }
+    100% { content: '...'; }
+  }
+
+  .cell-value .empty-text {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  /* ─── Cell Refs Indicator ─── */
+  .cell-refs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-top: 1px solid var(--border-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .cell-refs .ref-arrow { color: var(--text-dim); }
+  .cell-refs .ref-name {
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .cell-refs .ref-name:hover { color: var(--text-primary); }
+  .cell-refs .source-label {
+    color: var(--status-fresh);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* ─── Expanded Cell Detail ─── */
+  .cell-detail {
+    display: none;
+    border-top: 1px solid var(--border-dim);
+    padding: 12px;
+    background: var(--bg-deep);
+  }
+
+  .cell.expanded .cell-detail { display: block; }
+  .cell.expanded .cell-value { max-height: none; }
+  .cell.expanded .cell-value::after { display: none; }
+
+  .detail-section {
+    margin-bottom: 12px;
+  }
+
+  .detail-section:last-child { margin-bottom: 0; }
+
+  .detail-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .detail-content {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg-surface);
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border-dim);
+  }
+
+  .detail-content .snapshot-key {
+    color: var(--status-computing);
+  }
+
+  .detail-content .snapshot-val {
+    color: var(--text-secondary);
+  }
+
+  /* ─── Depth Column Labels ─── */
+  .depth-label {
+    position: absolute;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    opacity: 0.4;
+  }
+
+  /* ─── Grid Background Pattern ─── */
+  .grid-canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 1px 1px, var(--border-dim) 0.5px, transparent 0.5px);
+    background-size: 32px 32px;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  /* ─── Keyboard hint ─── */
+  .keyboard-hint {
+    position: fixed;
+    bottom: 16px;
+    right: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    z-index: 100;
+    display: flex;
+    gap: 12px;
+  }
+
+  .keyboard-hint kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-dim);
+    border-radius: 3px;
+    font-size: 9px;
+    margin-right: 3px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Status Bar -->
+<div class="status-bar">
+  <div class="left">
+    <span class="sheet-name">mol-algebraic-survey</span>
+    <span class="metric">
+      <span class="dot" style="background:var(--status-fresh)"></span>
+      <span class="count" id="count-fresh">1</span> fresh
+    </span>
+    <span class="metric">
+      <span class="dot" style="background:var(--status-stale)"></span>
+      <span class="count" id="count-stale">2</span> stale
+    </span>
+    <span class="metric">
+      <span class="dot" style="background:var(--status-computing)"></span>
+      <span class="count" id="count-computing">1</span> computing
+    </span>
+    <span class="metric">
+      <span class="dot" style="background:var(--status-empty)"></span>
+      <span class="count" id="count-empty">1</span> empty
+    </span>
+  </div>
+  <div class="right">
+    <span class="budget">budget <span class="value" id="total-tokens">41,300 tok</span></span>
+    <span style="color:var(--text-dim)">5 cells</span>
+    <span style="color:var(--text-dim)">depth 0..4</span>
+  </div>
+</div>
+
+<!-- Grid -->
+<div class="grid-viewport" id="viewport">
+  <div class="grid-canvas" id="canvas">
+    <svg class="wire-layer" id="wire-layer"></svg>
+    <div class="cell-layer" id="cell-layer"></div>
+  </div>
+</div>
+
+<div class="keyboard-hint">
+  <span><kbd>Click</kbd> expand</span>
+  <span><kbd>Hover</kbd> trace</span>
+  <span><kbd>Esc</kbd> collapse</span>
+</div>
+
+<script>
+// ─── Data ────────────────────────────────────────────────────────────────────
+const cells = [
+  {
+    id: 'extract-types',
+    name: 'extract-types',
+    status: 'fresh',
+    tokens: 5200,
+    depth: 0,
+    quality: 'good',
+    value: 'Found 12 types: Graph, DAG, Cell, Wire, Formula, CellType, CellSig, Port, Staleness, Compression, TokenBudget, Quality',
+    refs: [],
+    prompt: 'Analyze the algebraic structure of Gas Town. Extract all primary types, their signatures, and relationships.',
+    snapshot: null,
+  },
+  {
+    id: 'find-patterns',
+    name: 'find-patterns',
+    status: 'stale',
+    tokens: 8100,
+    depth: 1,
+    quality: 'adequate',
+    value: '3 patterns found:\n1. Monoidal composition — cells compose via typed wiring\n2. Reactive staleness — upstream changes propagate dirty flags\n3. Typed wiring — ports enforce type compatibility at edges',
+    refs: ['extract-types'],
+    prompt: 'Given the extracted types, identify recurring algebraic patterns. Look for monoids, functors, natural transformations.',
+    snapshot: { 'extract-types': 'hash:a3f2c1 (5200 tok, fresh)' },
+  },
+  {
+    id: 'synthesize',
+    name: 'synthesize',
+    status: 'stale',
+    tokens: 12000,
+    depth: 2,
+    quality: 'good',
+    value: 'The system forms a typed reactive calculus with monoidal composition over a DAG of cells. Key insight: staleness propagation is a functor from the cell category to the lattice of freshness states. Compression depth acts as a graded modality.',
+    refs: ['extract-types', 'find-patterns'],
+    prompt: 'Synthesize findings into a unified algebraic model. Identify the core mathematical structure.',
+    snapshot: {
+      'extract-types': 'hash:a3f2c1 (5200 tok, fresh)',
+      'find-patterns': 'hash:7e91b4 (8100 tok, stale)',
+    },
+  },
+  {
+    id: 'write-report',
+    name: 'write-report',
+    status: 'computing',
+    tokens: 15000,
+    depth: 3,
+    quality: 'good',
+    value: null,
+    refs: ['synthesize'],
+    prompt: 'Write a formal report on the algebraic structure of Gas Town. Include definitions, theorems, and proof sketches.',
+    snapshot: { 'synthesize': 'hash:pending...' },
+  },
+  {
+    id: 'decision',
+    name: 'decision',
+    status: 'empty',
+    tokens: 1000,
+    depth: 4,
+    quality: 'draft',
+    value: null,
+    refs: ['synthesize'],
+    prompt: 'Based on the synthesis, decide: should we formalize in Lean 4 or keep informal? Provide rationale.',
+    snapshot: null,
+  },
+];
+
+// Build adjacency maps
+const upstreamMap = {};   // id -> [ids that feed into it]
+const downstreamMap = {}; // id -> [ids it feeds into]
+cells.forEach(c => {
+  upstreamMap[c.id] = c.refs;
+  downstreamMap[c.id] = [];
+});
+cells.forEach(c => {
+  c.refs.forEach(ref => {
+    if (downstreamMap[ref]) downstreamMap[ref].push(c.id);
+  });
+});
+
+// Transitive closures
+function getUpstream(id, visited = new Set()) {
+  if (visited.has(id)) return visited;
+  visited.add(id);
+  (upstreamMap[id] || []).forEach(ref => getUpstream(ref, visited));
+  return visited;
+}
+
+function getDownstream(id, visited = new Set()) {
+  if (visited.has(id)) return visited;
+  visited.add(id);
+  (downstreamMap[id] || []).forEach(ref => getDownstream(ref, visited));
+  return visited;
+}
+
+// ─── Layout ──────────────────────────────────────────────────────────────────
+// Group by depth, stack vertically within each depth column
+const depthGroups = {};
+cells.forEach(c => {
+  if (!depthGroups[c.depth]) depthGroups[c.depth] = [];
+  depthGroups[c.depth].push(c);
+});
+
+const cellWidth = 280;
+const colGap = 140;
+const rowGap = 28;
+const startX = 60;
+const startY = 40;
+
+const positions = {};
+let maxY = 0;
+
+Object.keys(depthGroups).sort((a,b) => a - b).forEach(depth => {
+  const group = depthGroups[depth];
+  const x = startX + depth * (cellWidth + colGap);
+  group.forEach((cell, i) => {
+    const y = startY + i * (160 + rowGap);
+    positions[cell.id] = { x, y };
+    maxY = Math.max(maxY, y + 180);
+  });
+});
+
+// Center groups vertically relative to the tallest column
+const maxGroupSize = Math.max(...Object.values(depthGroups).map(g => g.length));
+const totalMaxHeight = maxGroupSize * (160 + rowGap) - rowGap;
+
+Object.keys(depthGroups).forEach(depth => {
+  const group = depthGroups[depth];
+  const groupHeight = group.length * (160 + rowGap) - rowGap;
+  const offset = (totalMaxHeight - groupHeight) / 2;
+  group.forEach((cell, i) => {
+    positions[cell.id].y = startY + offset + i * (160 + rowGap);
+  });
+});
+
+// ─── Render Cells ────────────────────────────────────────────────────────────
+const cellLayer = document.getElementById('cell-layer');
+const cellElements = {};
+
+function formatTokens(n) {
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(n);
+}
+
+cells.forEach(cell => {
+  const pos = positions[cell.id];
+  const el = document.createElement('div');
+  el.className = 'cell';
+  el.dataset.id = cell.id;
+  el.dataset.status = cell.status;
+  el.style.left = pos.x + 'px';
+  el.style.top = pos.y + 'px';
+
+  let valueHTML;
+  if (cell.status === 'computing') {
+    valueHTML = '<span class="computing-text">computing</span>';
+  } else if (cell.value === null || cell.value === '') {
+    valueHTML = '<span class="empty-text">awaiting input</span>';
+  } else {
+    valueHTML = escapeHTML(cell.value);
+  }
+
+  let refsHTML;
+  if (cell.refs.length === 0) {
+    refsHTML = '<span class="source-label">source cell</span>';
+  } else {
+    refsHTML = '<span class="ref-arrow">\u2190</span> ' +
+      cell.refs.map(r => `<span class="ref-name" data-ref="${r}">${r}</span>`).join(', ');
+  }
+
+  let snapshotHTML = '';
+  if (cell.snapshot) {
+    const lines = Object.entries(cell.snapshot)
+      .map(([k,v]) => `<span class="snapshot-key">${escapeHTML(k)}</span>: <span class="snapshot-val">${escapeHTML(v)}</span>`)
+      .join('\n');
+    snapshotHTML = `
+      <div class="detail-section">
+        <div class="detail-label">Input Snapshot</div>
+        <div class="detail-content">${lines}</div>
+      </div>`;
+  }
+
+  el.innerHTML = `
+    <div class="cell-header">
+      <span class="cell-name">${escapeHTML(cell.name)}</span>
+      <div class="cell-badges">
+        <span class="badge badge-quality" data-quality="${cell.quality}">${cell.quality}</span>
+        <span class="badge badge-status" data-status="${cell.status}">${cell.status}</span>
+      </div>
+    </div>
+    <div class="cell-metrics">
+      <span class="metric-item">\u25B8 <span class="metric-value">${cell.status === 'computing' || cell.status === 'empty' ? '~' : ''}${formatTokens(cell.tokens)} tok</span></span>
+      <span class="metric-item">d<span class="metric-value">${cell.depth}</span></span>
+    </div>
+    <div class="cell-value">${valueHTML}</div>
+    <div class="cell-refs">${refsHTML}</div>
+    <div class="cell-detail">
+      <div class="detail-section">
+        <div class="detail-label">Prompt Template</div>
+        <div class="detail-content">${escapeHTML(cell.prompt)}</div>
+      </div>
+      ${snapshotHTML}
+      <div class="detail-section">
+        <div class="detail-label">Full Value</div>
+        <div class="detail-content">${cell.value ? escapeHTML(cell.value) : '<span style="color:var(--text-dim)">no value yet</span>'}</div>
+      </div>
+    </div>
+  `;
+
+  cellLayer.appendChild(el);
+  cellElements[cell.id] = el;
+});
+
+function escapeHTML(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ─── Render Wires ────────────────────────────────────────────────────────────
+const wireSvg = document.getElementById('wire-layer');
+const wireElements = {}; // "from->to" => { path, dotStart, dotEnd }
+
+function renderWires() {
+  wireSvg.innerHTML = '';
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Calculate canvas size
+  let maxX = 0;
+  Object.values(positions).forEach(p => { maxX = Math.max(maxX, p.x + cellWidth + 100); });
+  maxY = 0;
+  Object.values(positions).forEach(p => { maxY = Math.max(maxY, p.y + 200); });
+  wireSvg.setAttribute('width', maxX + 200);
+  wireSvg.setAttribute('height', maxY + 100);
+
+  cells.forEach(cell => {
+    cell.refs.forEach(refId => {
+      const from = positions[refId];
+      const to = positions[cell.id];
+      if (!from || !to) return;
+
+      const fromEl = cellElements[refId];
+      const toEl = cellElements[cell.id];
+      const fromH = fromEl ? fromEl.offsetHeight : 140;
+      const toH = toEl ? toEl.offsetHeight : 140;
+
+      const x1 = from.x + cellWidth;
+      const y1 = from.y + fromH / 2;
+      const x2 = to.x;
+      const y2 = to.y + toH / 2;
+
+      const dx = (x2 - x1) * 0.5;
+
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`);
+      path.classList.add('wire');
+      path.dataset.from = refId;
+      path.dataset.to = cell.id;
+      wireSvg.appendChild(path);
+
+      // Connection dots
+      const dot1 = document.createElementNS(ns, 'circle');
+      dot1.setAttribute('cx', x1);
+      dot1.setAttribute('cy', y1);
+      dot1.setAttribute('r', 3);
+      dot1.classList.add('wire-dot');
+      dot1.dataset.from = refId;
+      dot1.dataset.to = cell.id;
+      wireSvg.appendChild(dot1);
+
+      const dot2 = document.createElementNS(ns, 'circle');
+      dot2.setAttribute('cx', x2);
+      dot2.setAttribute('cy', y2);
+      dot2.setAttribute('r', 3);
+      dot2.classList.add('wire-dot');
+      dot2.dataset.from = refId;
+      dot2.dataset.to = cell.id;
+      wireSvg.appendChild(dot2);
+
+      wireElements[`${refId}->${cell.id}`] = { path, dot1, dot2 };
+    });
+  });
+}
+
+renderWires();
+
+// ─── Interaction: Hover Highlighting ─────────────────────────────────────────
+let hoveredCell = null;
+let expandedCell = null;
+
+function highlightCell(cellId) {
+  if (!cellId) {
+    // Clear all highlights
+    Object.values(cellElements).forEach(el => {
+      el.classList.remove('highlight-source', 'highlight-target', 'dimmed');
+    });
+    document.querySelectorAll('.wire').forEach(w => {
+      w.classList.remove('upstream', 'downstream', 'dimmed');
+    });
+    document.querySelectorAll('.wire-dot').forEach(d => {
+      d.classList.remove('upstream', 'downstream');
+    });
+    return;
+  }
+
+  const upstream = getUpstream(cellId);
+  const downstream = getDownstream(cellId);
+  upstream.delete(cellId);
+  downstream.delete(cellId);
+
+  // Highlight cells
+  Object.entries(cellElements).forEach(([id, el]) => {
+    if (id === cellId) {
+      el.classList.remove('dimmed', 'highlight-source', 'highlight-target');
+    } else if (upstream.has(id)) {
+      el.classList.add('highlight-source');
+      el.classList.remove('dimmed', 'highlight-target');
+    } else if (downstream.has(id)) {
+      el.classList.add('highlight-target');
+      el.classList.remove('dimmed', 'highlight-source');
+    } else {
+      el.classList.add('dimmed');
+      el.classList.remove('highlight-source', 'highlight-target');
+    }
+  });
+
+  // Highlight wires
+  document.querySelectorAll('.wire').forEach(w => {
+    const from = w.dataset.from;
+    const to = w.dataset.to;
+    const isUpstream = (upstream.has(from) || from === cellId) && (upstream.has(to) || to === cellId);
+    const isDownstream = (downstream.has(from) || from === cellId) && (downstream.has(to) || to === cellId);
+
+    w.classList.remove('upstream', 'downstream', 'dimmed');
+    if (isUpstream) w.classList.add('upstream');
+    else if (isDownstream) w.classList.add('downstream');
+    else w.classList.add('dimmed');
+  });
+
+  document.querySelectorAll('.wire-dot').forEach(d => {
+    const from = d.dataset.from;
+    const to = d.dataset.to;
+    const isUpstream = (upstream.has(from) || from === cellId) && (upstream.has(to) || to === cellId);
+    const isDownstream = (downstream.has(from) || from === cellId) && (downstream.has(to) || to === cellId);
+
+    d.classList.remove('upstream', 'downstream');
+    if (isUpstream) d.classList.add('upstream');
+    else if (isDownstream) d.classList.add('downstream');
+  });
+}
+
+// Attach hover events
+Object.entries(cellElements).forEach(([id, el]) => {
+  el.addEventListener('mouseenter', () => {
+    hoveredCell = id;
+    highlightCell(id);
+  });
+  el.addEventListener('mouseleave', () => {
+    hoveredCell = null;
+    if (!expandedCell) highlightCell(null);
+  });
+});
+
+// ─── Interaction: Click to Expand ────────────────────────────────────────────
+Object.entries(cellElements).forEach(([id, el]) => {
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    if (expandedCell === id) {
+      // Collapse
+      el.classList.remove('expanded');
+      expandedCell = null;
+      highlightCell(hoveredCell);
+      requestAnimationFrame(renderWires);
+      return;
+    }
+
+    // Collapse previous
+    if (expandedCell && cellElements[expandedCell]) {
+      cellElements[expandedCell].classList.remove('expanded');
+    }
+
+    el.classList.add('expanded');
+    expandedCell = id;
+    highlightCell(id);
+    requestAnimationFrame(renderWires);
+  });
+});
+
+// Click outside to collapse
+document.getElementById('viewport').addEventListener('click', () => {
+  if (expandedCell && cellElements[expandedCell]) {
+    cellElements[expandedCell].classList.remove('expanded');
+    expandedCell = null;
+    highlightCell(null);
+    requestAnimationFrame(renderWires);
+  }
+});
+
+// Escape to collapse
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && expandedCell) {
+    cellElements[expandedCell].classList.remove('expanded');
+    expandedCell = null;
+    highlightCell(null);
+    requestAnimationFrame(renderWires);
+  }
+});
+
+// Ref name click -> navigate to that cell
+document.querySelectorAll('.ref-name').forEach(refEl => {
+  refEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const targetId = refEl.dataset.ref;
+    const targetEl = cellElements[targetId];
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      // Flash highlight
+      targetEl.style.transition = 'box-shadow 0.15s ease';
+      targetEl.style.boxShadow = '0 0 0 2px var(--status-computing), 0 0 24px rgba(96,165,250,0.3)';
+      setTimeout(() => {
+        targetEl.style.boxShadow = '';
+      }, 800);
+    }
+  });
+});
+
+// ─── Computing cell shimmer effect ───────────────────────────────────────────
+const computingCells = document.querySelectorAll('.cell[data-status="computing"]');
+computingCells.forEach(el => {
+  el.style.background = `linear-gradient(135deg, var(--bg-surface) 0%, var(--status-computing-bg) 50%, var(--bg-surface) 100%)`;
+  el.style.backgroundSize = '200% 200%';
+  el.style.animation = 'shimmer 3s ease-in-out infinite';
+});
+
+// Add shimmer keyframes dynamically
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+`;
+document.head.appendChild(style);
+
+// ─── Canvas Sizing ───────────────────────────────────────────────────────────
+function updateCanvasSize() {
+  let maxX = 0, maxY = 0;
+  Object.values(positions).forEach(p => {
+    maxX = Math.max(maxX, p.x + 500);
+    maxY = Math.max(maxY, p.y + 300);
+  });
+  const canvas = document.getElementById('canvas');
+  canvas.style.width = maxX + 'px';
+  canvas.style.height = maxY + 'px';
+}
+updateCanvasSize();
+</script>
+</body>
+</html>
