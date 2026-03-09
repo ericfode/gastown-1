@@ -57,7 +57,16 @@ program       = { molecule | recipe | prompt_frag | oracle_decl | input_decl } ;
 
 molecule      = "##" IDENT "{" mol_body "##/" ;
 mol_body      = { cell | map_cell | reduce_cell | wire | preset
-                | input_decl | prompt_frag | oracle_decl | COMMENT } ;
+                | input_decl | prompt_frag | oracle_decl
+                | import_decl | apply_stmt | COMMENT } ;
+
+import_decl   = "import" IDENT ;
+apply_stmt    = "apply" IDENT "(" ident_list ")" [ "where" selector_expr ] ;
+selector_expr = selector_pred { "and" selector_pred } ;
+selector_pred = "type" "==" cell_type
+              | "depth" CMP NUMBER
+              | "tag" "==" STRING
+              | "name" "==" STRING ;
 
 recipe        = "recipe" IDENT "(" param_list ")" "{" { operation } "}" ;
 prompt_frag   = "prompt@" IDENT prompt_lines ;
@@ -781,7 +790,145 @@ cell_hash = blake3(canonical(prompt + sorted(ref_hashes) + oracle_hash))
 
 ---
 
-## 19. Open Questions
+## 19. Composition: Import, Apply, Aspects
+
+Three constructs close the gap with TOML's composition features.
+
+### Import
+
+```cell
+## shiny-secure {
+  import shiny           -- load all cells and wires from shiny molecule
+
+  -- now modify: insert security steps around implement
+  apply insert-security-scan(implement)
+##/
+```
+
+`import name` loads another molecule's cells, wires, inputs, and presets
+into the current molecule. The imported names are available for recipes
+and wiring. This is how `extends` works in TOML.
+
+### Apply with Selectors
+
+```cell
+-- Apply a recipe to cells matching a selector
+apply insert-gate(*, synthesis, LENGTH(100, 5000))
+  where type == llm and depth > 0
+
+-- Apply to a specific cell
+apply rule-of-five(implement)
+
+-- Apply to all cells with a tag
+apply add-timeout(*)
+  where tag == "expensive"
+```
+
+Selectors filter cells by:
+- `type == llm` — cell type
+- `depth > 0` — DAG depth (0 = source cells)
+- `tag == "expensive"` — cell tag
+- `name == "implement"` — exact name
+- `*` — all cells
+
+This is the AOP mechanism. Instead of `advice.around`, you write a recipe
+that performs the graph transformation and `apply` it with a selector.
+
+### Aspect Pattern (AOP via Recipes)
+
+The TOML `security-audit` aspect with `advice.around` translates to:
+
+```cell
+-- Define the security aspect as a pair of recipes
+recipe security-prescan(target) {
+  !add # prescan : llm
+    > Pre-implementation security check for {{target}}.
+    > Review for secrets/credentials in scope.
+    accept> No pre-existing security issues
+  #/
+  !wire prescan -> target
+}
+
+recipe security-postscan(target) {
+  !add # postscan : llm
+    - target
+    > Post-implementation security audit.
+    > Scan {{target}} output for: injection, XSS, secrets, path traversal.
+    accept> Security audit passed
+  #/
+  -- Rewire: anything downstream of target now depends on postscan
+  !wire target -> postscan
+}
+
+-- Apply aspect: wrap implement with pre/post security scans
+## shiny-secure {
+  import shiny
+  apply security-prescan(implement)
+  apply security-postscan(implement)
+##/
+```
+
+### Expansion Pattern (Rule of Five)
+
+The TOML `expansion` template translates to a recipe using `!split`:
+
+```cell
+recipe rule-of-five(target) {
+  !split target => [draft, refine-1, refine-2, refine-3, refine-4]
+
+  !refine draft {
+    user>
+      Initial attempt. Breadth over depth. Get the shape right.
+  }
+  !refine refine-1 {
+    user>
+      First pass: CORRECTNESS. Fix errors and bugs.
+  }
+  !refine refine-2 {
+    user>
+      Second pass: CLARITY. Simplify. Can someone else understand this?
+  }
+  !refine refine-3 {
+    user>
+      Third pass: COMPLETENESS. What's missing? Edge cases?
+  }
+  !refine refine-4 {
+    user>
+      Final pass: POLISH. Style, naming, documentation.
+  }
+}
+
+## shiny-enterprise {
+  import shiny
+  apply rule-of-five(implement)
+##/
+```
+
+### Grammar Additions
+
+```ebnf
+(* Add to mol_body *)
+mol_body      = { cell | map_cell | reduce_cell | wire | preset
+                | input_decl | prompt_frag | oracle_decl
+                | import_decl | apply_stmt | COMMENT } ;
+
+import_decl   = "import" IDENT ;
+apply_stmt    = "apply" IDENT "(" ident_list ")" [ where_clause ] ;
+where_clause  = "where" selector_expr ;
+selector_expr = selector_pred { "and" selector_pred } ;
+selector_pred = "type" "==" cell_type
+              | "depth" CMP NUMBER
+              | "tag" "==" STRING
+              | "name" "==" STRING ;
+```
+
+These three additions (import, apply, selectors) close all 4 gaps
+identified in the formula survey: AOP aspects, expansion templates,
+formula composition, and selector-based application.
+
+---
+
+## 20. Open Questions
 
 1. **Parser implementation language.** Go (matches Gas Town), Rust (matches bd), or tree-sitter grammar (editor support)?
 2. **TOML migration tooling.** Auto-convert existing formulas or manual migration?
