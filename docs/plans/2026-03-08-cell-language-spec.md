@@ -48,7 +48,7 @@ Comments extend to end of line.
 
 ### Lexer Modes
 
-The grammar is context-free. The **lexer** is modal — it tracks three modes
+The grammar is context-free. The **lexer** is modal — it tracks four modes
 to disambiguate tokens that look identical in different contexts. This is
 analogous to Python's INDENT/DEDENT handling: the grammar doesn't change,
 but the scanner needs state.
@@ -56,13 +56,14 @@ but the scanner needs state.
 **Mode transitions:**
 
 ```
-NORMAL ──── SECTION_TAG ───→ PROMPT
-NORMAL ──── distill> ──────→ BLOCK (ends at next cell-level token, not ```)
-NORMAL ──── ```lang ───────→ BLOCK (ends at ```)
-PROMPT ──── (outdent) ─────→ NORMAL
-PROMPT ──── ```lang ───────→ BLOCK
-BLOCK  ──── ``` ───────────→ (previous mode)
-BLOCK  ──── (cell-level) ──→ NORMAL  (for distill> blocks only)
+NORMAL ──── SECTION_TAG ────→ PROMPT
+NORMAL ──── ```lang ────────→ HARD_BLOCK  (ends at ```)
+NORMAL ──── distill> ───────→ SOFT_BLOCK  (ends at cell-level token)
+NORMAL ──── format> IDENT ──→ SOFT_BLOCK  (ends at cell-level token)
+PROMPT ──── (outdent) ──────→ NORMAL
+PROMPT ──── ```lang ────────→ HARD_BLOCK
+HARD_BLOCK ─ ``` ───────────→ (previous mode)
+SOFT_BLOCK ─ (cell-level) ──→ NORMAL  (oracle, section, cell close, etc)
 ```
 
 **Mode NORMAL** (default):
@@ -79,7 +80,7 @@ BLOCK  ──── (cell-level) ──→ NORMAL  (for distill> blocks only)
 - `!verb ...` → OPERATION
 - `squash> ...` → SQUASH
 - `distill>` → DISTILL_OPEN (enters BLOCK mode; ends at next cell-level token)
-- `format> IDENT` → FORMAT_TAG (note: not SECTION_TAG)
+- `format> IDENT` → FORMAT_TAG (enters SOFT_BLOCK mode; not a SECTION_TAG)
 - `system>` `context>` `user>` etc → SECTION_TAG (enters PROMPT mode)
 - `` ```lang `` → SCRIPT_OPEN or ORACLE_OPEN (enters BLOCK mode)
 
@@ -89,19 +90,25 @@ BLOCK  ──── (cell-level) ──→ NORMAL  (for distill> blocks only)
 - `` ```lang `` → enters BLOCK mode (nested code example in prompt)
 - Another SECTION_TAG at cell indent level → exit PROMPT, enter new PROMPT
 
-**Mode BLOCK** (inside ``` ... ``` or distill> delimiters):
+**Mode HARD_BLOCK** (inside ``` ... ``` delimiters):
 - All lines → BODY_LINE (opaque content)
 - `` ``` `` at same indent → BLOCK_CLOSE, return to previous mode
-- For `distill>` blocks: cell-level token (oracle, cell close, section) → exit BLOCK
-- `distill>` blocks have **no explicit closer** — they end implicitly
+
+**Mode SOFT_BLOCK** (after `distill>` or `format> IDENT`):
+- All indented lines → BODY_LINE (opaque content)
+- Cell-level token (oracle block, section tag, cell close, etc) → exit to NORMAL
+- No explicit closer — ends when the lexer sees something structural
 
 **Indent tracking**: The lexer tracks the indent depth of the containing
 cell. Lines indented deeper than the cell body are content (PROMPT_LINE
 or BODY_LINE). Lines at cell indent level or less are structure tokens.
 
 **Why this matters for distillation**: Each mode is an independent
-distillation domain. NORMAL mode token rules, PROMPT mode rules, and
-BLOCK mode rules can crystallize separately. The mode transitions
+distillation domain. NORMAL mode token rules, PROMPT mode rules,
+HARD_BLOCK rules, and SOFT_BLOCK rules can crystallize separately.
+HARD_BLOCK and SOFT_BLOCK are trivial (everything is BODY_LINE) and
+distill immediately. NORMAL mode distills next (structural patterns
+are highly regular). PROMPT mode distills last (most varied). The mode transitions
 themselves are simple enough to distill immediately.
 
 ---
