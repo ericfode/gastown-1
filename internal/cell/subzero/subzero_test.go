@@ -652,3 +652,78 @@ func TestReduceEarlyExit(t *testing.T) {
 		t.Errorf("Fields[result] = %q, want %q", result.Fields["result"], "got it")
 	}
 }
+
+// --- valueToString tests ---
+
+func TestValueToStringComplexTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		val  parser.Value
+		want string
+	}{
+		{
+			name: "string",
+			val:  parser.Value{Kind: "string", Str: "hello"},
+			want: "hello",
+		},
+		{
+			name: "number_int",
+			val:  parser.Value{Kind: "number", Num: 42},
+			want: "42",
+		},
+		{
+			name: "number_float",
+			val:  parser.Value{Kind: "number", Num: 3.14},
+			want: "3.14",
+		},
+		{
+			name: "bool_true",
+			val:  parser.Value{Kind: "bool", Bool: true},
+			want: "true",
+		},
+		{
+			name: "null",
+			val:  parser.Value{Kind: "null"},
+			want: "",
+		},
+		{
+			name: "array",
+			val: parser.Value{Kind: "array", Array: []parser.Value{
+				{Kind: "number", Num: 1},
+				{Kind: "number", Num: 2},
+				{Kind: "string", Str: "three"},
+			}},
+			want: `[1,2,"three"]`,
+		},
+		{
+			name: "object",
+			val: parser.Value{Kind: "object", Object: map[string]parser.Value{
+				"key": {Kind: "string", Str: "value"},
+			}},
+			want: `{"key":"value"}`,
+		},
+		{
+			name: "nested_object",
+			val: parser.Value{Kind: "object", Object: map[string]parser.Value{
+				"items": {Kind: "array", Array: []parser.Value{
+					{Kind: "number", Num: 1},
+				}},
+			}},
+			want: `{"items":[1]}`,
+		},
+		{
+			name: "ref",
+			val:  parser.Value{Kind: "ref", Ref: "other_cell"},
+			want: "other_cell",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := valueToString(tt.val)
+			if got != tt.want {
+				t.Errorf("valueToString() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

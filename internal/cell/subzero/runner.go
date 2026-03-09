@@ -283,9 +283,54 @@ func valueToString(v parser.Value) string {
 		return "false"
 	case "null":
 		return ""
-	default:
-		b, _ := json.Marshal(v.Str)
+	case "array":
+		b, _ := json.Marshal(valueSliceToInterface(v.Array))
 		return string(b)
+	case "object":
+		b, _ := json.Marshal(valueMapToInterface(v.Object))
+		return string(b)
+	case "ref":
+		return v.Ref
+	default:
+		return v.Str
+	}
+}
+
+// valueSliceToInterface converts a slice of parser.Value to []interface{} for JSON marshaling.
+func valueSliceToInterface(vals []parser.Value) []interface{} {
+	result := make([]interface{}, len(vals))
+	for i, v := range vals {
+		result[i] = valueToInterface(v)
+	}
+	return result
+}
+
+// valueMapToInterface converts a map of parser.Value to map[string]interface{} for JSON marshaling.
+func valueMapToInterface(vals map[string]parser.Value) map[string]interface{} {
+	result := make(map[string]interface{}, len(vals))
+	for k, v := range vals {
+		result[k] = valueToInterface(v)
+	}
+	return result
+}
+
+// valueToInterface converts a parser.Value to its native Go interface{} representation.
+func valueToInterface(v parser.Value) interface{} {
+	switch v.Kind {
+	case "string":
+		return v.Str
+	case "number":
+		return v.Num
+	case "bool":
+		return v.Bool
+	case "null":
+		return nil
+	case "array":
+		return valueSliceToInterface(v.Array)
+	case "object":
+		return valueMapToInterface(v.Object)
+	default:
+		return v.Str
 	}
 }
 
