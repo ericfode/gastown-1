@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cell — Reactive Graph Visualizer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-void: #07080c;
+    --bg-deep: #0a0c12;
+    --bg-surface: #11131b;
+    --bg-raised: #181b26;
+    --bg-hover: #1f2333;
+    --border-dim: #252838;
+    --border-mid: #353a50;
+    --border-bright: #4a5270;
+    --text-primary: #d8ddf0;
+    --text-secondary: #8890a8;
+    --text-dim: #555d78;
+    --text-label: #6a7490;
+
+    --fresh: #2dd4a0;
+    --fresh-bg: rgba(45, 212, 160, 0.07);
+    --fresh-glow: rgba(45, 212, 160, 0.35);
+    --stale: #f0b840;
+    --stale-bg: rgba(240, 184, 64, 0.07);
+    --stale-glow: rgba(240, 184, 64, 0.35);
+    --computing: #5898f0;
+    --computing-bg: rgba(88, 152, 240, 0.07);
+    --computing-glow: rgba(88, 152, 240, 0.35);
+    --empty: #606878;
+    --empty-bg: rgba(96, 104, 120, 0.05);
+    --failed: #f06068;
+    --failed-bg: rgba(240, 96, 104, 0.07);
+    --failed-glow: rgba(240, 96, 104, 0.35);
+
+    --oracle-pass: var(--fresh);
+    --oracle-fail: var(--failed);
+    --oracle-pending: var(--text-dim);
+
+    --wire-rest: #2a2e40;
+    --wire-active: #5898f0;
+    --wire-data: var(--fresh);
+
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'DM Sans', sans-serif;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg-void); }
+
+  body {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* grain */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 9999; opacity: 0.02;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ─── Top Bar ─── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 40px; padding: 0 16px;
+    background: var(--bg-deep);
+    border-bottom: 1px solid var(--border-dim);
+    user-select: none; z-index: 100; position: relative;
+  }
+
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+
+  .topbar .mol-name {
+    font-weight: 600; font-size: 13px; color: var(--text-primary);
+    letter-spacing: 0.02em; font-family: var(--font-sans);
+  }
+  .topbar .mol-name::before {
+    content: '##'; color: var(--computing); margin-right: 6px;
+    font-family: var(--font-mono); font-weight: 400; font-size: 11px;
+  }
+
+  .topbar .gen-badge {
+    font-size: 10px; color: var(--text-dim); padding: 2px 8px;
+    border: 1px solid var(--border-dim); border-radius: 3px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+
+  .topbar-right { display: flex; align-items: center; gap: 14px; }
+
+  .stat { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 11px; }
+  .stat .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .stat .val { color: var(--text-primary); font-weight: 500; }
+
+  .topbar .cost { color: var(--text-dim); font-size: 11px; }
+  .topbar .cost b { color: var(--computing); font-weight: 500; }
+
+  /* ─── Layout ─── */
+  .app { display: flex; height: calc(100vh - 40px); }
+
+  /* ─── Sidebar ─── */
+  .sidebar {
+    width: 260px; min-width: 260px;
+    background: var(--bg-deep);
+    border-right: 1px solid var(--border-dim);
+    overflow-y: auto; padding: 12px 0;
+  }
+
+  .sidebar::-webkit-scrollbar { width: 4px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border-dim); border-radius: 2px; }
+
+  .sidebar-section { padding: 0 12px; margin-bottom: 16px; }
+  .sidebar-section h3 {
+    font-size: 9px; font-weight: 600; color: var(--text-dim);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 8px; padding: 0 4px;
+  }
+
+  .cell-list-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 4px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .cell-list-item:hover { background: var(--bg-raised); }
+  .cell-list-item.selected { background: var(--bg-hover); border-left: 2px solid var(--computing); }
+
+  .cell-list-item .status-pip {
+    width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0;
+  }
+  .cell-list-item .status-pip.fresh { background: var(--fresh); box-shadow: 0 0 6px var(--fresh-glow); }
+  .cell-list-item .status-pip.stale { background: var(--stale); box-shadow: 0 0 6px var(--stale-glow); }
+  .cell-list-item .status-pip.computing { background: var(--computing); box-shadow: 0 0 6px var(--computing-glow); animation: pulse 2s ease-in-out infinite; }
+  .cell-list-item .status-pip.empty { background: var(--empty); }
+  .cell-list-item .status-pip.failed { background: var(--failed); box-shadow: 0 0 6px var(--failed-glow); }
+
+  @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+
+  .cell-list-item .cell-name { font-size: 11px; color: var(--text-primary); font-weight: 500; }
+  .cell-list-item .cell-type { font-size: 9px; color: var(--text-dim); margin-left: auto; }
+
+  /* oracle sidebar */
+  .oracle-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 10px; }
+  .oracle-row .oracle-wire { color: var(--text-dim); flex: 1; }
+  .oracle-pip { width: 5px; height: 5px; border-radius: 50%; }
+  .oracle-pip.pass { background: var(--oracle-pass); }
+  .oracle-pip.fail { background: var(--oracle-fail); }
+  .oracle-pip.pending { background: var(--oracle-pending); }
+  .oracle-label { font-size: 9px; }
+  .oracle-label.pass { color: var(--fresh); }
+  .oracle-label.fail { color: var(--failed); }
+  .oracle-label.pending { color: var(--text-dim); }
+
+  /* ─── Graph Viewport ─── */
+  .viewport {
+    flex: 1; position: relative; overflow: auto;
+    cursor: grab; background: var(--bg-void);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.015) 1px, transparent 0);
+    background-size: 32px 32px;
+  }
+  .viewport:active { cursor: grabbing; }
+  .viewport::-webkit-scrollbar { width: 5px; height: 5px; }
+  .viewport::-webkit-scrollbar-thumb { background: var(--border-dim); border-radius: 3px; }
+
+  .canvas {
+    position: relative; min-width: 100%; min-height: 100%;
+    padding: 60px 80px 120px;
+  }
+
+  /* ─── SVG Wires ─── */
+  .wire-layer {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 1;
+  }
+
+  .wire-path {
+    fill: none; stroke: var(--wire-rest); stroke-width: 1.5;
+    transition: stroke 0.3s, stroke-width 0.3s, opacity 0.3s;
+  }
+  .wire-path.active { stroke: var(--wire-active); stroke-width: 2; }
+  .wire-path.data-flowing { stroke: var(--wire-data); stroke-width: 2; filter: drop-shadow(0 0 4px var(--fresh-glow)); }
+  .wire-path.dimmed { opacity: 0.1; }
+  .wire-path.oracle-gated { stroke-dasharray: 6 4; }
+
+  .wire-arrow { fill: var(--wire-rest); transition: fill 0.3s; }
+  .wire-arrow.active { fill: var(--wire-active); }
+  .wire-arrow.data-flowing { fill: var(--wire-data); }
+
+  /* flow particles on active wires */
+  @keyframes flow-dot {
+    0% { offset-distance: 0%; opacity: 0; }
+    10% { opacity: 1; } 90% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+  .flow-dot {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--computing); position: absolute;
+    offset-rotate: 0deg; animation: flow-dot 2.5s linear infinite;
+    pointer-events: none; z-index: 2;
+    box-shadow: 0 0 8px var(--computing-glow);
+  }
+
+  /* ─── Cell Nodes ─── */
+  .cell-layer { position: relative; z-index: 10; }
+
+  .node {
+    position: absolute; width: 240px;
+    background: var(--bg-surface); border: 1px solid var(--border-dim);
+    border-radius: 6px; cursor: pointer; user-select: none;
+    transition: transform 0.2s, box-shadow 0.3s, border-color 0.3s;
+  }
+  .node::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 2px; border-radius: 6px 6px 0 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .node[data-status="fresh"]::before { background: var(--fresh); box-shadow: 0 0 10px var(--fresh-glow); }
+  .node[data-status="stale"]::before { background: var(--stale); box-shadow: 0 0 10px var(--stale-glow); }
+  .node[data-status="computing"]::before { background: var(--computing); box-shadow: 0 0 10px var(--computing-glow); animation: node-glow 2s ease-in-out infinite; }
+  .node[data-status="empty"]::before { background: var(--empty); }
+  .node[data-status="failed"]::before { background: var(--failed); box-shadow: 0 0 10px var(--failed-glow); }
+
+  @keyframes node-glow {
+    0%,100% { box-shadow: 0 0 8px var(--computing-glow); }
+    50% { box-shadow: 0 0 20px rgba(88,152,240,0.6); }
+  }
+
+  .node:hover {
+    border-color: var(--border-mid); transform: translateY(-1px);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+  }
+  .node.selected { border-color: var(--computing); box-shadow: 0 0 0 1px var(--computing), 0 6px 24px rgba(0,0,0,0.4); }
+
+  .node-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px 6px; border-bottom: 1px solid var(--border-dim);
+  }
+  .node-header .name {
+    font-size: 12px; font-weight: 600; color: var(--text-primary);
+    font-family: var(--font-sans);
+  }
+  .node-header .type {
+    font-size: 9px; color: var(--text-dim); margin-left: auto;
+    padding: 1px 6px; border: 1px solid var(--border-dim); border-radius: 3px;
+    letter-spacing: 0.04em;
+  }
+
+  .node-body { padding: 8px 12px; }
+
+  .node-prompt {
+    font-size: 10px; color: var(--text-secondary); line-height: 1.6;
+    max-height: 48px; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  }
+  .node-prompt .ref { color: var(--computing); font-weight: 500; }
+
+  .node-footer {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px 8px; font-size: 9px;
+  }
+  .node-footer .ann { color: var(--text-dim); }
+  .node-footer .ann b { color: var(--text-secondary); font-weight: 500; }
+  .node-footer .oracle-badge {
+    margin-left: auto; display: flex; align-items: center; gap: 4px;
+  }
+  .node-footer .oracle-badge .pip { width: 5px; height: 5px; border-radius: 50%; }
+  .node-footer .oracle-badge .pip.pass { background: var(--oracle-pass); }
+  .node-footer .oracle-badge .pip.fail { background: var(--oracle-fail); }
+  .node-footer .oracle-badge .pip.pending { background: var(--oracle-pending); }
+
+  /* ─── Detail Panel ─── */
+  .detail-panel {
+    width: 320px; min-width: 320px;
+    background: var(--bg-deep);
+    border-left: 1px solid var(--border-dim);
+    overflow-y: auto; padding: 16px;
+    display: none;
+  }
+  .detail-panel.open { display: block; }
+  .detail-panel::-webkit-scrollbar { width: 4px; }
+  .detail-panel::-webkit-scrollbar-thumb { background: var(--border-dim); border-radius: 2px; }
+
+  .detail-panel h2 {
+    font-family: var(--font-sans); font-size: 16px; font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .detail-panel .detail-type { font-size: 10px; color: var(--text-dim); margin-bottom: 16px; }
+
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h4 {
+    font-size: 9px; font-weight: 600; color: var(--text-dim);
+    letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px;
+  }
+  .detail-section pre {
+    background: var(--bg-surface); border: 1px solid var(--border-dim);
+    border-radius: 4px; padding: 10px 12px; font-size: 11px;
+    line-height: 1.6; color: var(--text-secondary); overflow-x: auto;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .detail-section pre .kw { color: var(--computing); }
+  .detail-section pre .str { color: var(--fresh); }
+  .detail-section pre .ref-hl { color: var(--stale); font-weight: 500; }
+  .detail-section pre .comment { color: var(--text-dim); font-style: italic; }
+
+  .detail-deps { list-style: none; }
+  .detail-deps li {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 0; font-size: 11px; color: var(--text-secondary);
+  }
+  .detail-deps li .arrow { color: var(--text-dim); }
+  .detail-deps li .dep-name { color: var(--computing); cursor: pointer; }
+  .detail-deps li .dep-name:hover { text-decoration: underline; }
+
+  .detail-oracle {
+    background: var(--bg-surface); border: 1px solid var(--border-dim);
+    border-radius: 4px; padding: 10px 12px; font-size: 10px;
+    line-height: 1.6; color: var(--text-secondary);
+  }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 3px; font-size: 10px;
+    font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .status-badge.fresh { background: var(--fresh-bg); color: var(--fresh); border: 1px solid var(--fresh-glow); }
+  .status-badge.stale { background: var(--stale-bg); color: var(--stale); border: 1px solid var(--stale-glow); }
+  .status-badge.computing { background: var(--computing-bg); color: var(--computing); border: 1px solid var(--computing-glow); }
+  .status-badge.empty { background: var(--empty-bg); color: var(--empty); border: 1px solid rgba(96,104,120,0.3); }
+  .status-badge.failed { background: var(--failed-bg); color: var(--failed); border: 1px solid var(--failed-glow); }
+
+  /* ─── Map cells (grouped) ─── */
+  .map-group {
+    position: absolute; border: 1px dashed var(--border-dim);
+    border-radius: 8px; padding: 8px;
+    background: rgba(88, 152, 240, 0.02);
+  }
+  .map-group .map-label {
+    position: absolute; top: -10px; left: 12px;
+    font-size: 9px; color: var(--computing); background: var(--bg-void);
+    padding: 0 6px; letter-spacing: 0.06em;
+  }
+
+  /* ─── Tooltip ─── */
+  .tooltip {
+    position: fixed; z-index: 1000; pointer-events: none;
+    background: var(--bg-raised); border: 1px solid var(--border-mid);
+    border-radius: 4px; padding: 6px 10px; font-size: 10px;
+    color: var(--text-secondary); box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    max-width: 300px; display: none;
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Top Bar ─── -->
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="mol-name" id="mol-name">code-review</span>
+    <span class="gen-badge" id="gen-badge">Gen 1</span>
+  </div>
+  <div class="topbar-right">
+    <div class="stat"><div class="dot" style="background:var(--fresh)"></div><span class="val" id="stat-fresh">2</span> fresh</div>
+    <div class="stat"><div class="dot" style="background:var(--computing)"></div><span class="val" id="stat-computing">3</span> computing</div>
+    <div class="stat"><div class="dot" style="background:var(--stale)"></div><span class="val" id="stat-stale">1</span> stale</div>
+    <div class="stat"><div class="dot" style="background:var(--empty)"></div><span class="val" id="stat-empty">2</span> empty</div>
+    <div class="cost">tokens: <b id="stat-tokens">12,400</b></div>
+  </div>
+</div>
+
+<!-- ─── App Layout ─── -->
+<div class="app">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h3>Cells</h3>
+      <div id="cell-list"></div>
+    </div>
+    <div class="sidebar-section">
+      <h3>Oracles</h3>
+      <div id="oracle-list"></div>
+    </div>
+    <div class="sidebar-section">
+      <h3>Presets</h3>
+      <div id="preset-list"></div>
+    </div>
+  </div>
+
+  <!-- Graph Viewport -->
+  <div class="viewport" id="viewport">
+    <div class="canvas" id="canvas">
+      <svg class="wire-layer" id="wire-layer"></svg>
+      <div class="cell-layer" id="cell-layer"></div>
+    </div>
+  </div>
+
+  <!-- Detail Panel -->
+  <div class="detail-panel" id="detail-panel">
+    <h2 id="detail-name"></h2>
+    <div class="detail-type" id="detail-type"></div>
+    <div class="detail-section">
+      <h4>Status</h4>
+      <div id="detail-status"></div>
+    </div>
+    <div class="detail-section">
+      <h4>Prompt</h4>
+      <pre id="detail-prompt"></pre>
+    </div>
+    <div class="detail-section">
+      <h4>Dependencies</h4>
+      <ul class="detail-deps" id="detail-deps"></ul>
+    </div>
+    <div class="detail-section" id="detail-oracle-section" style="display:none">
+      <h4>Oracle</h4>
+      <div class="detail-oracle" id="detail-oracle"></div>
+    </div>
+    <div class="detail-section" id="detail-output-section" style="display:none">
+      <h4>Output</h4>
+      <pre id="detail-output"></pre>
+    </div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// Demo data — in production, this comes from:
+//   cell graph pipeline.cell --json | or
+//   bd list --json --parent=<molecule-bead-id>
+// ═══════════════════════════════════════════════════════════
+
+const DEMO_MOLECULE = {
+  name: "code-review",
+  generation: 1,
+  cells: [
+    {
+      id: "fetch-diff", type: "script", status: "fresh",
+      prompt: '``` sh\ngh pr diff {{param.pr}} --repo {{param.repo}}\n```',
+      refs: [], oracle: null,
+      annotations: { cost: 0 },
+      output: '{"files": ["src/main.go", "internal/beads/crud.go"], "total_added": 87, "total_removed": 23}',
+      x: 80, y: 60
+    },
+    {
+      id: "file-classifier", type: "distilled", status: "fresh",
+      prompt: '``` sh\necho \'{{fetch-diff}}\' | jq \'[.files[] | {path, category}]\'\n```',
+      refs: ["fetch-diff"], oracle: null,
+      annotations: { cost: 0 },
+      output: '[{"path":"src/main.go","category":"src"},{"path":"internal/beads/crud.go","category":"src"}]',
+      x: 80, y: 220
+    },
+    {
+      id: "logic-review", type: "llm", status: "computing",
+      prompt: 'Review source code changes for logical correctness.\n\nDiff: {{fetch-diff}}\nFile categories: {{file-classifier}}\n\nFocus ONLY on files categorized as \'src\'.',
+      refs: ["fetch-diff", "file-classifier"],
+      oracle: 'json_parse(v);\nkeys_present(v, ["findings"]);\nfor f in v.findings {\n  assert f.severity in ["critical", "major", "minor", "nit"];\n}',
+      annotations: { cost: 10000, quality: "good", model: "sonnet" },
+      x: 380, y: 100
+    },
+    {
+      id: "style-review", type: "llm", status: "computing",
+      prompt: 'Review code changes for style and maintainability.\n\nDiff: {{fetch-diff}}\nFile categories: {{file-classifier}}',
+      refs: ["fetch-diff", "file-classifier"],
+      oracle: 'json_parse(v);\nfor f in v.findings {\n  assert f.severity in ["minor", "nit"];\n}',
+      annotations: { cost: 8000, quality: "adequate", model: "sonnet" },
+      x: 380, y: 280
+    },
+    {
+      id: "security-scan", type: "oracle", status: "computing",
+      prompt: 'Scan the diff for security concerns.\n\nDiff: {{fetch-diff}}\n\nCheck for: hardcoded secrets, SQL injection, path traversal.',
+      refs: ["fetch-diff"],
+      oracle: 'json_parse(v);\nassert typeof(v.clean) == "boolean";\nif not v.clean { assert len(v.findings) > 0; }',
+      annotations: { cost: 4000, quality: "excellent", model: "opus" },
+      x: 380, y: 460
+    },
+    {
+      id: "review-synthesis", type: "llm", status: "empty",
+      prompt: 'Synthesize all review findings.\n\nLogic: {{logic-review}}\nStyle: {{style-review}}\nSecurity: {{security-scan}}\n\nDeduplicate. Prioritize: security > logic > style.',
+      refs: ["logic-review", "style-review", "security-scan", "file-classifier"],
+      oracle: 'json_parse(v);\nassert v.verdict in ["approve", "request-changes", "comment"];\nif v.verdict == "request-changes" { assert len(v.blocking) > 0; }',
+      annotations: { cost: 8000, quality: "excellent", model: "opus" },
+      x: 700, y: 220
+    },
+    {
+      id: "pr-comment", type: "llm", status: "empty",
+      prompt: 'Format the review as a GitHub PR comment in markdown.\n\nReview: {{review-synthesis}}\nPR: {{param.pr_url}}',
+      refs: ["review-synthesis"],
+      oracle: 'assert contains(v, "## Code Review");\nassert contains(v, "Verdict");',
+      annotations: { cost: 4000, quality: "adequate" },
+      x: 1000, y: 220
+    },
+    {
+      id: "src-files-exist", type: "oracle", status: "stale",
+      prompt: null,
+      refs: ["file-classifier"],
+      oracle: 'json_parse(v);\nassert any(v, fun(f) { f.category == "src" });',
+      annotations: {},
+      isGateOracle: true,
+      x: 230, y: 160
+    }
+  ],
+  wires: [
+    { from: "fetch-diff", to: "file-classifier" },
+    { from: "fetch-diff", to: "logic-review" },
+    { from: "fetch-diff", to: "style-review" },
+    { from: "fetch-diff", to: "security-scan" },
+    { from: "file-classifier", to: "logic-review", oracle: "src-files-exist" },
+    { from: "file-classifier", to: "style-review" },
+    { from: "file-classifier", to: "review-synthesis" },
+    { from: "logic-review", to: "review-synthesis" },
+    { from: "style-review", to: "review-synthesis" },
+    { from: "security-scan", to: "review-synthesis" },
+    { from: "review-synthesis", to: "pr-comment" }
+  ],
+  totalTokens: 12400
+};
+
+// ═══════════════════════════════════════════════════════════
+// Renderer
+// ═══════════════════════════════════════════════════════════
+
+const NODE_W = 240;
+const NODE_H_EST = 110;
+let selectedCell = null;
+
+function statusColor(s) {
+  return { fresh: 'var(--fresh)', stale: 'var(--stale)', computing: 'var(--computing)', empty: 'var(--empty)', failed: 'var(--failed)' }[s] || 'var(--empty)';
+}
+
+function highlightRefs(text) {
+  if (!text) return '';
+  return text
+    .replace(/\{\{([^}]+)\}\}/g, '<span class="ref">{{$1}}</span>')
+    .replace(/```\s*(\w+)/g, '<span class="kw">```$1</span>')
+    .replace(/```/g, '<span class="kw">```</span>');
+}
+
+function renderTopbar(mol) {
+  document.getElementById('mol-name').textContent = mol.name;
+  document.getElementById('gen-badge').textContent = `Gen ${mol.generation}`;
+  const counts = { fresh: 0, computing: 0, stale: 0, empty: 0 };
+  mol.cells.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
+  document.getElementById('stat-fresh').textContent = counts.fresh;
+  document.getElementById('stat-computing').textContent = counts.computing;
+  document.getElementById('stat-stale').textContent = counts.stale;
+  document.getElementById('stat-empty').textContent = counts.empty;
+  document.getElementById('stat-tokens').textContent = mol.totalTokens.toLocaleString();
+}
+
+function renderSidebar(mol) {
+  const list = document.getElementById('cell-list');
+  list.innerHTML = mol.cells.filter(c => !c.isGateOracle).map(c => `
+    <div class="cell-list-item" data-cell="${c.id}">
+      <div class="status-pip ${c.status}"></div>
+      <span class="cell-name">${c.id}</span>
+      <span class="cell-type">${c.type}</span>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.cell-list-item').forEach(el => {
+    el.addEventListener('click', () => selectCell(el.dataset.cell));
+  });
+
+  const oList = document.getElementById('oracle-list');
+  oList.innerHTML = mol.wires.filter(w => w.oracle).map(w => {
+    const oracleCell = mol.cells.find(c => c.id === w.oracle);
+    const verdict = oracleCell?.status === 'fresh' ? 'pass' : oracleCell?.status === 'failed' ? 'fail' : 'pending';
+    return `<div class="oracle-row">
+      <span class="oracle-wire">${w.from} → ${w.to}</span>
+      <div class="oracle-pip ${verdict}"></div>
+      <span class="oracle-label ${verdict}">${verdict}</span>
+    </div>`;
+  }).join('') || '<div style="padding:4px 8px;font-size:10px;color:var(--text-dim)">No oracle-gated wires</div>';
+}
+
+function renderNodes(mol) {
+  const layer = document.getElementById('cell-layer');
+  layer.innerHTML = mol.cells.filter(c => !c.isGateOracle).map(c => {
+    const annParts = [];
+    if (c.annotations.cost) annParts.push(`@cost(<b>${c.annotations.cost.toLocaleString()}</b>)`);
+    if (c.annotations.quality) annParts.push(`@quality(<b>${c.annotations.quality}</b>)`);
+    if (c.annotations.model) annParts.push(`@model(<b>${c.annotations.model}</b>)`);
+    const hasOracle = !!c.oracle;
+    const oracleVerdict = c.status === 'fresh' ? 'pass' : c.status === 'failed' ? 'fail' : 'pending';
+
+    return `<div class="node" data-id="${c.id}" data-status="${c.status}"
+                 style="left:${c.x}px; top:${c.y}px;">
+      <div class="node-header">
+        <span class="name">${c.id}</span>
+        <span class="type">${c.type}</span>
+      </div>
+      <div class="node-body">
+        <div class="node-prompt">${highlightRefs(c.prompt || '(gate oracle)')}</div>
+      </div>
+      <div class="node-footer">
+        <span class="ann">${annParts.join(' ')}</span>
+        ${hasOracle ? `<div class="oracle-badge"><div class="pip ${oracleVerdict}"></div><span style="font-size:9px;color:var(--text-dim)">oracle</span></div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  layer.querySelectorAll('.node').forEach(el => {
+    el.addEventListener('click', () => selectCell(el.dataset.id));
+  });
+}
+
+function renderWires(mol) {
+  const svg = document.getElementById('wire-layer');
+  const cells = mol.cells;
+  const getPos = id => {
+    const c = cells.find(x => x.id === id);
+    return c ? { x: c.x + NODE_W / 2, y: c.y + NODE_H_EST / 2 } : null;
+  };
+
+  let paths = '';
+  mol.wires.forEach(w => {
+    const from = getPos(w.from);
+    const to = getPos(w.to);
+    if (!from || !to) return;
+
+    const fromCell = cells.find(c => c.id === w.from);
+    const isFlowing = fromCell?.status === 'fresh';
+    const isActive = fromCell?.status === 'computing';
+    const cls = isFlowing ? 'data-flowing' : isActive ? 'active' : '';
+    const dashCls = w.oracle ? ' oracle-gated' : '';
+
+    // bezier curve
+    const dx = to.x - from.x;
+    const cp = Math.max(Math.abs(dx) * 0.4, 60);
+    const d = `M${from.x},${from.y} C${from.x + cp},${from.y} ${to.x - cp},${to.y} ${to.x},${to.y}`;
+
+    paths += `<path class="wire-path ${cls}${dashCls}" d="${d}" data-from="${w.from}" data-to="${w.to}"/>`;
+
+    // arrowhead
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    const ax = to.x - 12 * Math.cos(angle);
+    const ay = to.y - 12 * Math.sin(angle);
+    const a1x = ax - 6 * Math.cos(angle - 0.5);
+    const a1y = ay - 6 * Math.sin(angle - 0.5);
+    const a2x = ax - 6 * Math.cos(angle + 0.5);
+    const a2y = ay - 6 * Math.sin(angle + 0.5);
+    paths += `<polygon class="wire-arrow ${cls}" points="${to.x},${to.y} ${a1x},${a1y} ${a2x},${a2y}"/>`;
+
+    // oracle diamond on gated wires
+    if (w.oracle) {
+      const mx = (from.x + to.x) / 2;
+      const my = (from.y + to.y) / 2;
+      paths += `<polygon class="wire-arrow" points="${mx},${my-6} ${mx+6},${my} ${mx},${my+6} ${mx-6},${my}" style="fill:var(--stale);opacity:0.7"/>`;
+    }
+  });
+  svg.innerHTML = paths;
+}
+
+function selectCell(id) {
+  const mol = DEMO_MOLECULE;
+  const cell = mol.cells.find(c => c.id === id);
+  if (!cell) return;
+  selectedCell = id;
+
+  // highlight in sidebar
+  document.querySelectorAll('.cell-list-item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.cell === id);
+  });
+
+  // highlight node
+  document.querySelectorAll('.node').forEach(el => {
+    el.classList.toggle('selected', el.dataset.id === id);
+  });
+
+  // dim unrelated wires
+  document.querySelectorAll('.wire-path').forEach(el => {
+    const from = el.dataset.from;
+    const to = el.dataset.to;
+    const related = from === id || to === id || cell.refs.includes(from);
+    el.classList.toggle('dimmed', !related);
+  });
+
+  // detail panel
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('open');
+  document.getElementById('detail-name').textContent = cell.id;
+  document.getElementById('detail-type').textContent = `# ${cell.id} : ${cell.type}`;
+  document.getElementById('detail-status').innerHTML = `<span class="status-badge ${cell.status}">${cell.status}</span>`;
+
+  document.getElementById('detail-prompt').innerHTML = highlightRefs(cell.prompt || '(no prompt)');
+
+  const deps = document.getElementById('detail-deps');
+  deps.innerHTML = cell.refs.map(r => {
+    const rc = mol.cells.find(c => c.id === r);
+    return `<li><span class="arrow">←</span> <span class="dep-name" data-cell="${r}">${r}</span> <span style="color:var(--text-dim)">(${rc?.status || '?'})</span></li>`;
+  }).join('') || '<li style="color:var(--text-dim)">no dependencies (source cell)</li>';
+
+  deps.querySelectorAll('.dep-name').forEach(el => {
+    el.addEventListener('click', () => selectCell(el.dataset.cell));
+  });
+
+  const oSection = document.getElementById('detail-oracle-section');
+  const oContent = document.getElementById('detail-oracle');
+  if (cell.oracle) {
+    oSection.style.display = 'block';
+    oContent.textContent = cell.oracle;
+  } else {
+    oSection.style.display = 'none';
+  }
+
+  const outSection = document.getElementById('detail-output-section');
+  const outContent = document.getElementById('detail-output');
+  if (cell.output) {
+    outSection.style.display = 'block';
+    try { outContent.textContent = JSON.stringify(JSON.parse(cell.output), null, 2); }
+    catch { outContent.textContent = cell.output; }
+  } else {
+    outSection.style.display = 'none';
+  }
+}
+
+// click viewport to deselect
+document.getElementById('viewport').addEventListener('click', (e) => {
+  if (e.target.closest('.node')) return;
+  selectedCell = null;
+  document.querySelectorAll('.node').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.cell-list-item').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.wire-path').forEach(el => el.classList.remove('dimmed'));
+  document.getElementById('detail-panel').classList.remove('open');
+});
+
+// ═══════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════
+renderTopbar(DEMO_MOLECULE);
+renderSidebar(DEMO_MOLECULE);
+renderNodes(DEMO_MOLECULE);
+renderWires(DEMO_MOLECULE);
+
+// Auto-select first computing cell for demo
+setTimeout(() => selectCell('logic-review'), 300);
+</script>
+</body>
+</html>
