@@ -1,0 +1,215 @@
+-- CELL ZERO — The Distillation Runtime
+--
+-- This is the first Cell program. It watches other cells execute and
+-- crystallizes the ones that prove stable. It is the core of Cell:
+-- the idea that if you execute a cell program enough times, it will
+-- autonomously distill everything possible.
+--
+-- Cell Zero runs as a background molecule alongside any other molecule.
+-- It observes, measures, proposes, validates, and freezes.
+--
+-- The lifecycle of every LLM cell:
+--   llm → (observed) → (candidate) → (validated) → distilled
+--
+-- Cell Zero is itself subject to distillation. After enough runs,
+-- its own observation and proposal cells will crystallize. The runtime
+-- optimizes itself through use.
+
+## cell-zero
+
+  input param.target_molecule : str required
+  input param.min_runs : number default(10)
+  input param.consistency_threshold : number default(0.95)
+
+  -- Phase 1: Observe — watch cells execute, record history
+
+  # observe : script
+    ```bash
+    # Query execution history for target molecule
+    bd mol history "{{param.target_molecule}}" --json 2>/dev/null
+    # For each LLM cell, extract:
+    # - input hash (blake3 of assembled prompt)
+    # - output hash (blake3 of output)
+    # - oracle verdict (pass/fail)
+    # - cost (tokens consumed)
+    # - latency (time to complete)
+    ```
+  #/
+
+  # analyze : llm
+    - observe
+    @cost(max: 8000)
+    system>
+      You are the distillation analyzer. You examine cell execution
+      history and identify candidates for crystallization.
+
+      A cell is a distillation candidate when:
+      1. It has been executed >= {{param.min_runs}} times
+      2. Its oracle passes >= {{param.consistency_threshold}} of the time
+      3. Its output shape is stable (same keys, similar structure)
+      4. Input→output mapping is learnable (not random/creative)
+
+      Cells that should NOT be distilled:
+      - Creative writing cells (output intentionally varies)
+      - Cells with @temperature > 0.5 (high variance by design)
+      - Meta cells (they emit Cell source — freezing kills evolution)
+      - Cells marked @no-distill
+    context>
+      Execution history:
+      {{observe}}
+    user>
+      Identify distillation candidates. For each:
+      1. Cell name and current type
+      2. Run count and oracle pass rate
+      3. Output stability score (0-1)
+      4. Proposed input→output mapping
+      5. Estimated cost savings
+    format> candidates
+      {
+        analyzed: number,
+        candidates: [{
+          cell: str,
+          runs: number,
+          pass_rate: number,
+          stability: number,
+          mapping_size: number,
+          monthly_cost_saved: number
+        }],
+        skip_reasons: [{ cell: str, reason: str }]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["analyzed", "candidates"]);
+    for c in output.candidates {
+      assert c.runs >= {{param.min_runs}};
+      assert c.pass_rate >= {{param.consistency_threshold}};
+    }
+    ```
+  #/
+
+  -- Phase 2: Propose — generate distillation blocks
+
+  map # propose : llm over {{analyze.candidates}} as candidate
+    @cost(max: 6000)
+    system>
+      You are generating a distill> block for a Cell cell.
+      The distill> block captures the input→output mapping
+      observed across multiple executions.
+
+      The mapping uses regex patterns on input and returns
+      the observed output. Include a fallback to llm for
+      novel inputs.
+    user>
+      Generate a distill> block for cell "{{candidate.cell}}".
+      It was executed {{candidate.runs}} times with {{candidate.pass_rate}} pass rate.
+
+      Build the input_pattern → output mapping from execution history.
+      Cover the most common input patterns first.
+      Always include `fallback: llm` for unmatched patterns.
+    format> distillation
+      {
+        cell: str,
+        distill_block: str,
+        patterns_covered: number,
+        coverage_pct: number
+      }
+
+    ```oracle
+    json_parse(output);
+    assert output.coverage_pct >= 0.8;
+    assert output.distill_block contains "fallback:";
+    ```
+  #/
+
+  -- Phase 3: Validate — test distilled cells against live execution
+
+  map # validate : llm over {{propose.*}} as proposal
+    @cost(max: 4000)
+    system>
+      You are validating a proposed distillation.
+      Compare the distilled output against what the LLM would produce.
+      The distillation is valid if outputs match for all test inputs.
+    user>
+      For cell "{{proposal.cell}}":
+      1. Take 5 recent inputs from execution history
+      2. Run them through the proposed distill> mapping
+      3. Compare against the actual LLM outputs
+      4. Report match rate
+    format> validation
+      {
+        cell: str,
+        test_count: number,
+        match_count: number,
+        match_rate: number,
+        mismatches: [{ input_hash: str, expected: str, got: str }]
+      }
+
+    ```oracle
+    json_parse(output);
+    assert output.match_rate >= 0.9;
+    reject if output.match_rate < 0.8;
+    ```
+  #/
+
+  -- Phase 4: Freeze — apply validated distillations
+
+  # freeze : llm
+    - validate
+    @cost(max: 8000)
+    system>
+      You are applying validated distillations to the target molecule.
+      For each validated cell, rewrite its definition:
+      - Change cell_type from "llm" to "distilled"
+      - Replace prompt sections with a distill> block
+      - Preserve oracle block (for runtime validation)
+      - Add provenance comment with run count and date
+    context>
+      Validated distillations:
+      each> v in {{validate.*}}
+        Cell: {{v.cell}} — match rate: {{v.match_rate}}
+    user>
+      Generate the Cell source patches to apply these distillations.
+      Only freeze cells with match_rate >= 0.9.
+      Output the modified .cell file sections.
+    format> patches
+      {
+        frozen: [{ cell: str, match_rate: number }],
+        skipped: [{ cell: str, reason: str }],
+        total_cost_saved: number
+      }
+  #/
+
+  -- Phase 5: Report — what did Cell Zero accomplish?
+
+  # report : llm
+    - freeze
+    - analyze
+    @cost(max: 4000)
+    system>
+      You are writing the distillation report. Be precise.
+    user>
+      Distillation cycle complete for {{param.target_molecule}}.
+
+      Analyzed: {{analyze.analyzed}} cells
+      Candidates: {{analyze.candidates}}
+      Frozen: {{freeze.frozen}}
+      Skipped: {{freeze.skipped}}
+      Cost saved: {{freeze.total_cost_saved}}/month
+
+      Write a one-paragraph summary.
+    format> report
+      {
+        molecule: str,
+        cells_analyzed: number,
+        cells_distilled: number,
+        cells_skipped: number,
+        monthly_savings: number,
+        distillation_pct: number,
+        summary: str
+      }
+  #/
+
+  squash> trigger: on_complete template: distillation include_metrics: true
+
+##/

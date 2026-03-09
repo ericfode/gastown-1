@@ -89,7 +89,8 @@ reduce_cell   = "reduce" "#" IDENT ":" cell_type "over" REF "as" IDENT
                 "with" IDENT "=" value cell_body "#/" ;
 
 cell_body     = { ref_decl | annotation | prompt_section
-                | oracle_block | accept_block | vars_block } ;
+                | oracle_block | accept_block | vars_block
+                | distill_block } ;
               (* Note: each> blocks may appear nested inside other prompt
                  sections (e.g. inside user>). The parser treats each> as
                  a sub-section that iterates within its parent section. *)
@@ -1109,7 +1110,98 @@ ref_decl      = "-" IDENT ( "." IDENT )? [ "(" "or" ")" ] ;
 
 ---
 
-## 22. Open Questions
+## 22. Distillation
+
+LLM cells are expensive and nondeterministic. Distillation crystallizes them
+into deterministic functions once they prove stable.
+
+### Lifecycle
+
+```
+# start : llm           -- LLM evaluates, oracle validates
+    ↓ (N consistent runs, oracle always passes)
+# start : distilled      -- frozen: input→output mapping cached
+    ↓ (oracle fails on new input pattern)
+# start : llm           -- thawed: back to LLM for novel cases
+```
+
+### Distillation Record
+
+When a cell is distilled, its execution history is captured:
+
+```cell
+# classify : distilled
+  -- Provenance: distilled from llm after 12 consistent runs
+  -- Distilled: 2026-03-09T04:00:00Z
+  -- Input hash: blake3(prompt + refs)
+  -- Output hash: blake3(output)
+  -- Oracle: all 12 runs passed json_parse + keys_present
+
+  distill>
+    input_pattern: "{{param.category}}"
+    output_map: {
+      "bug" -> { priority: 1, type: "bug" },
+      "feature" -> { priority: 2, type: "feature" },
+      "chore" -> { priority: 3, type: "chore" }
+    }
+    fallback: llm
+  #/
+```
+
+### Distillation Block Grammar
+
+```ebnf
+distill_block = "distill>" { distill_field } ;
+distill_field = "input_pattern" ":" value
+              | "output_map" ":" "{" { value "->" value } "}"
+              | "fallback" ":" cell_type ;
+```
+
+A `distilled` cell body contains a `distill>` block instead of prompt sections.
+The runtime checks the input against `input_pattern`. If it matches a known
+mapping, the cached output is returned (zero cost, deterministic). If no match,
+the `fallback` cell type is used (typically `llm`).
+
+### Triggers
+
+Distillation can be triggered by:
+
+1. **Manual**: `cell distill <molecule> <cell>` — freeze a cell now
+2. **Automatic**: runtime tracks oracle pass rate. After N consecutive passes
+   with identical output shape, suggest distillation
+3. **Oracle-driven**: a meta-oracle observes execution history and proposes
+   distillations as part of the molecule's evolution cycle
+
+### Phase Gates
+
+Each phase of a Cell proof-of-concept MUST include distillation before
+advancing:
+
+1. **Pour** — Execute all cells in the phase (LLM-powered)
+2. **Observe** — Track which cells produce consistent, oracle-passing output
+3. **Distill** — Freeze stable cells into `distilled` type
+4. **Validate** — Re-pour with distilled cells, verify equivalent behavior
+5. **Advance** — Move to next phase only after distillation validates
+
+This creates a ratchet: each phase is cheaper than the last because proven
+cells no longer need LLM calls. The language literally teaches itself to be
+more efficient through use.
+
+### Cost Model
+
+| Cell Type | Cost | Deterministic | Speed |
+|-----------|------|--------------|-------|
+| `llm` | $$$ | no | slow |
+| `distilled` | $0 | yes | instant |
+| `script` | $0 | yes* | fast |
+| `text` | $0 | yes | instant |
+
+*Script cells are deterministic given the same input, but shell commands
+may have side effects.
+
+---
+
+## 23. Open Questions
 
 1. **Parser implementation language.** Go (matches Gas Town), Rust (matches bd), or tree-sitter grammar (editor support)?
 2. **TOML migration tooling.** Auto-convert existing formulas or manual migration?
