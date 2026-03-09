@@ -17,6 +17,7 @@ var dangerousPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bbd\s+create\b`),
 	regexp.MustCompile(`\bgt\s+nudge\b`),
 	regexp.MustCompile(`\bgt\s+mail\b`),
+	regexp.MustCompile(`\bgt\s+escalate\b`),
 }
 
 // ScriptExecutor runs script cells as local bash subprocesses.
