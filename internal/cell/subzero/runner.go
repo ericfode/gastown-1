@@ -307,7 +307,8 @@ func generateMockJSON(spec *parser.FormatSpec) string {
 func mockValue(ft parser.FormatType) interface{} {
 	switch ft.Kind {
 	case "str":
-		return "mock_value"
+		// Generate a string long enough to pass common oracle length checks (50+ chars)
+		return "mock_value_placeholder_text_that_is_long_enough_to_pass_oracle_length_assertions_in_validation"
 	case "number":
 		return 1
 	case "boolean":
