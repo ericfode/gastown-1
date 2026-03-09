@@ -57,10 +57,12 @@ but the scanner needs state.
 
 ```
 NORMAL ──── SECTION_TAG ───→ PROMPT
-NORMAL ──── ```lang ───────→ BLOCK
+NORMAL ──── distill> ──────→ BLOCK (ends at next cell-level token, not ```)
+NORMAL ──── ```lang ───────→ BLOCK (ends at ```)
 PROMPT ──── (outdent) ─────→ NORMAL
 PROMPT ──── ```lang ───────→ BLOCK
 BLOCK  ──── ``` ───────────→ (previous mode)
+BLOCK  ──── (cell-level) ──→ NORMAL  (for distill> blocks only)
 ```
 
 **Mode NORMAL** (default):
@@ -76,7 +78,7 @@ BLOCK  ──── ``` ───────────→ (previous mode)
 - `IDENT -> IDENT` → WIRE
 - `!verb ...` → OPERATION
 - `squash> ...` → SQUASH
-- `distill>` → DISTILL_OPEN
+- `distill>` → DISTILL_OPEN (enters BLOCK mode; ends at next cell-level token)
 - `format> IDENT` → FORMAT_TAG (note: not SECTION_TAG)
 - `system>` `context>` `user>` etc → SECTION_TAG (enters PROMPT mode)
 - `` ```lang `` → SCRIPT_OPEN or ORACLE_OPEN (enters BLOCK mode)
@@ -87,9 +89,11 @@ BLOCK  ──── ``` ───────────→ (previous mode)
 - `` ```lang `` → enters BLOCK mode (nested code example in prompt)
 - Another SECTION_TAG at cell indent level → exit PROMPT, enter new PROMPT
 
-**Mode BLOCK** (inside ``` ... ``` delimiters):
+**Mode BLOCK** (inside ``` ... ``` or distill> delimiters):
 - All lines → BODY_LINE (opaque content)
 - `` ``` `` at same indent → BLOCK_CLOSE, return to previous mode
+- For `distill>` blocks: cell-level token (oracle, cell close, section) → exit BLOCK
+- `distill>` blocks have **no explicit closer** — they end implicitly
 
 **Indent tracking**: The lexer tracks the indent depth of the containing
 cell. Lines indented deeper than the cell body are content (PROMPT_LINE

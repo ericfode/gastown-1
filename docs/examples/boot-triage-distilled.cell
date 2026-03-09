@@ -38,7 +38,6 @@
         "deacon_alive=true.*error.*error" -> { action: "INTERRUPT", reason: "Repeated errors", confidence: 0.80 }
       }
       fallback: llm
-    #/
 
     ```oracle
     json_parse(output);
