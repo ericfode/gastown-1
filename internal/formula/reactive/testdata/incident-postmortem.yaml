@@ -1,0 +1,90 @@
+# Incident Post-Mortem Analysis
+# Source: docs/design/yaml-first-paradigm-examples.md (Example 1)
+# Topology: Diamond with fan-out to dual sinks (6 cells, depth 4)
+name: incident-postmortem
+cells:
+  - name: timeline
+    type: inventory
+    prompt: |
+      Reconstruct the incident timeline from the following log excerpts,
+      alert history, and chat transcripts. List events chronologically
+      with timestamps, actors, and systems affected.
+
+      Logs: (attached at eval time)
+
+  - name: blast-radius
+    type: boundaries
+    refs: [timeline]
+    prompt: |
+      From the incident timeline, determine the blast radius:
+      - Which services were directly affected?
+      - Which downstream consumers experienced degradation?
+      - What was the user-facing impact (error rates, latency, data loss)?
+      - Geographic and tenant scope.
+
+      Timeline:
+      {{timeline}}
+
+  - name: root-cause
+    type: synthesis
+    refs: [timeline]
+    prompt: |
+      Analyze the incident timeline for root cause. Apply the "5 Whys"
+      method. Distinguish between:
+      - Proximate cause (the trigger)
+      - Contributing factors (what made it worse)
+      - Systemic cause (why the system was vulnerable)
+
+      Timeline:
+      {{timeline}}
+
+  - name: detection-gap
+    type: laws
+    refs: [timeline, blast-radius]
+    prompt: |
+      Compare the incident timeline against the blast radius assessment.
+      Identify detection gaps:
+      - How long between first symptom and first alert?
+      - Were any affected services missing monitoring?
+      - What signal would have caught this earlier?
+
+      Timeline:
+      {{timeline}}
+
+      Blast radius:
+      {{blast-radius}}
+
+  - name: remediation-plan
+    type: code
+    refs: [root-cause, detection-gap]
+    prompt: |
+      Given the root cause analysis and detection gaps, produce a
+      remediation plan with concrete action items. Each item must have:
+      - Owner (team, not individual)
+      - Priority (P0-P3)
+      - Estimated effort (hours/days/weeks)
+      - Verification criteria
+
+      Root cause:
+      {{root-cause}}
+
+      Detection gaps:
+      {{detection-gap}}
+
+  - name: executive-summary
+    type: decision
+    refs: [blast-radius, root-cause, remediation-plan]
+    prompt: |
+      Write a 1-page executive summary of this incident for leadership.
+      Include: what happened (2 sentences), impact (metrics), root cause
+      (1 sentence), and top 3 remediation items with owners and timelines.
+      No jargon. No blame.
+
+      Blast radius:
+      {{blast-radius}}
+
+      Root cause:
+      {{root-cause}}
+
+      Remediation plan:
+      {{remediation-plan}}

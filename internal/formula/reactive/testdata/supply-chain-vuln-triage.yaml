@@ -1,0 +1,118 @@
+# Supply Chain Vulnerability Triage
+# Source: docs/design/yaml-first-paradigm-examples.md (Example 3)
+# Topology: Three-source fan-in, diamond lattice, dual decision sinks (8 cells, depth 5)
+name: supply-chain-vuln-triage
+cells:
+  - name: vuln-feed
+    type: inventory
+    prompt: |
+      Parse the vulnerability advisory feed. For each CVE, extract:
+      - CVE ID, CVSS score, attack vector
+      - Affected package and version range
+      - Patch availability (yes/no, which version)
+      - Exploit maturity (POC, weaponized, in-the-wild)
+
+      Feed data: (attached at eval time)
+
+  - name: dep-graph
+    type: inventory
+    prompt: |
+      Analyze the project's dependency graph. For each direct and
+      transitive dependency, list:
+      - Package name and locked version
+      - Depth in dependency tree (direct=0, transitive=1+)
+      - Number of reverse dependents in our codebase
+      - Last update date
+
+      Lock file: (attached at eval time)
+
+  - name: runtime-profile
+    type: boundaries
+    prompt: |
+      From production telemetry, determine which dependencies are
+      actually loaded at runtime vs build-time-only:
+      - Packages imported in hot paths (request handling)
+      - Packages used only in tests, codegen, or CI
+      - Packages imported but never called (dead code)
+
+      Telemetry data: (attached at eval time)
+
+  - name: exposure-map
+    type: synthesis
+    refs: [vuln-feed, dep-graph, runtime-profile]
+    prompt: |
+      Cross-reference the vulnerability feed against our dependency
+      graph and runtime profile. For each CVE that affects us:
+      - Is the vulnerable package a direct or transitive dep?
+      - Is it loaded at runtime or build-time-only?
+      - Is the vulnerable code path reachable from our code?
+      - Effective CVSS (adjusted for our exposure)
+
+      Vulnerabilities:
+      {{vuln-feed}}
+
+      Dependencies:
+      {{dep-graph}}
+
+      Runtime profile:
+      {{runtime-profile}}
+
+  - name: upgrade-paths
+    type: code
+    refs: [exposure-map, dep-graph]
+    prompt: |
+      For each exposed CVE, determine the upgrade path:
+      - Direct dep: bump to patched version, check API compat
+      - Transitive dep: which direct dep pulls it in? Can we bump?
+      - If no patch exists: is there a workaround or alternative package?
+      - Dependency conflicts (version constraints from other deps)
+
+      Exposure map:
+      {{exposure-map}}
+
+      Full dependency graph:
+      {{dep-graph}}
+
+  - name: risk-matrix
+    type: diagram
+    refs: [exposure-map]
+    prompt: |
+      Build a risk matrix (likelihood x impact) for all exposed CVEs.
+      Classify each into quadrants:
+      - CRITICAL: high likelihood + high impact
+      - HIGH: high in one dimension
+      - MEDIUM: moderate in both
+      - LOW: low in both
+
+      Exposure map:
+      {{exposure-map}}
+
+  - name: patch-plan
+    type: decision
+    refs: [upgrade-paths, risk-matrix]
+    prompt: |
+      Produce a prioritized patch plan. Order by risk quadrant
+      (CRITICAL first), then by upgrade complexity (easiest first
+      within each quadrant).
+
+      Upgrade paths:
+      {{upgrade-paths}}
+
+      Risk matrix:
+      {{risk-matrix}}
+
+  - name: stakeholder-brief
+    type: text
+    refs: [risk-matrix, patch-plan]
+    prompt: |
+      Write a stakeholder brief summarizing:
+      - Total CVEs found / total affecting us / total critical
+      - Key risk: the single scariest finding
+      - Patch plan summary: how many patches, estimated total effort
+      - Residual risk: what we are choosing NOT to patch and why
+
+      Risk matrix:
+      {{risk-matrix}}
+
+      Patch plan:
+      {{patch-plan}}

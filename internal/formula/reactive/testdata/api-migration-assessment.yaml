@@ -1,0 +1,108 @@
+# API Migration Impact Assessment
+# Source: docs/design/yaml-first-paradigm-examples.md (Example 2)
+# Topology: Two-source fan-in with diamond and secondary fan-out (7 cells, depth 5)
+name: api-migration-assessment
+cells:
+  - name: old-api-surface
+    type: inventory
+    prompt: |
+      Catalog the current (v2) API surface. For each endpoint, list:
+      - HTTP method and path
+      - Request/response schema (key fields only)
+      - Rate limits and auth requirements
+      - Known consumers (services and teams)
+
+      API spec: (attached at eval time)
+
+  - name: new-api-surface
+    type: inventory
+    prompt: |
+      Catalog the proposed (v3) API surface. For each endpoint, list:
+      - HTTP method and path
+      - Request/response schema (key fields only)
+      - Breaking vs non-breaking changes from v2
+      - New capabilities not present in v2
+
+      API spec: (attached at eval time)
+
+  - name: breaking-changes
+    type: boundaries
+    refs: [old-api-surface, new-api-surface]
+    prompt: |
+      Diff the v2 and v3 API surfaces. Produce a table of breaking changes:
+      | v2 Endpoint | Change Type | v3 Equivalent | Migration Effort |
+      Classify each as: removed, renamed, schema-changed, auth-changed,
+      or semantics-changed.
+
+      v2 API:
+      {{old-api-surface}}
+
+      v3 API:
+      {{new-api-surface}}
+
+  - name: consumer-impact
+    type: synthesis
+    refs: [old-api-surface, breaking-changes]
+    prompt: |
+      For each known consumer from the v2 API inventory, assess impact:
+      - Which breaking changes affect this consumer?
+      - Estimated migration effort (trivial/moderate/significant)
+      - Can they run dual-stack (v2+v3) during transition?
+      - Risk level if they don't migrate by deprecation date
+
+      v2 consumers:
+      {{old-api-surface}}
+
+      Breaking changes:
+      {{breaking-changes}}
+
+  - name: compatibility-shim
+    type: code
+    refs: [breaking-changes]
+    prompt: |
+      Design a compatibility shim layer that translates v2 requests into
+      v3 calls. For each breaking change, specify:
+      - Translation logic (pseudocode)
+      - Edge cases the shim cannot handle
+      - Performance overhead estimate
+      - Sunset timeline recommendation
+
+      Breaking changes:
+      {{breaking-changes}}
+
+  - name: migration-runbook
+    type: code
+    refs: [consumer-impact, compatibility-shim]
+    prompt: |
+      Write a migration runbook for platform consumers. Structure as phases:
+      Phase 1: Deploy compatibility shim (zero consumer changes)
+      Phase 2: Early adopter migration (willing teams)
+      Phase 3: Bulk migration (remaining consumers)
+      Phase 4: Shim sunset and v2 decommission
+
+      For each phase, specify: entry criteria, steps, rollback plan,
+      success metrics.
+
+      Consumer impact:
+      {{consumer-impact}}
+
+      Compatibility shim:
+      {{compatibility-shim}}
+
+  - name: go-no-go
+    type: decision
+    refs: [consumer-impact, migration-runbook]
+    prompt: |
+      Render a go/no-go decision for the v2 to v3 migration. Consider:
+      - Total consumer count and high-risk consumer count
+      - Shim coverage (what percentage of breaking changes are shimmable?)
+      - Aggregate migration effort across all consumers
+      - Risk of NOT migrating (v2 tech debt, security, performance)
+
+      Recommendation must be: GO, CONDITIONAL GO (with conditions), or NO-GO.
+
+      Consumer impact:
+      {{consumer-impact}}
+
+      Migration runbook:
+      {{migration-runbook}}

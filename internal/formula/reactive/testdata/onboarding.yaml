@@ -1,0 +1,22 @@
+# Onboarding Analysis
+# Source: docs/design/paradigm-ab-test.md (Paradigm A example)
+# Topology: Two-source fan-in chain (4 cells, depth 2)
+name: onboarding
+cells:
+  - name: codebase
+    type: text
+    prompt: "Read the repository structure and key files."
+
+  - name: docs
+    type: text
+    prompt: "Read README, CONTRIBUTING, and architecture docs."
+
+  - name: architecture
+    type: synthesis
+    prompt: "Codebase: {{codebase}}. Docs: {{docs}}. Describe the architecture."
+    refs: [codebase, docs]
+
+  - name: getting-started
+    type: decision
+    prompt: "Given architecture: {{architecture}}, write a getting-started guide."
+    refs: [architecture]

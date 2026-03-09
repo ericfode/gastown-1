@@ -1,0 +1,26 @@
+# Code Review Pipeline
+# Source: docs/design/paradigm-ab-test.md (Paradigm A example)
+# Topology: Fan-out then fan-in (4 cells, depth 2)
+name: code-review
+cells:
+  - name: read-code
+    type: text
+    prompt: "Read the source files in src/"
+
+  - name: find-bugs
+    type: inventory
+    prompt: "Given this code: {{read-code}}, list potential bugs."
+    refs: [read-code]
+
+  - name: find-patterns
+    type: inventory
+    prompt: "Given this code: {{read-code}}, list design patterns used."
+    refs: [read-code]
+
+  - name: review-report
+    type: synthesis
+    prompt: |
+      Bugs found: {{find-bugs}}
+      Patterns found: {{find-patterns}}
+      Write a comprehensive code review.
+    refs: [find-bugs, find-patterns]
