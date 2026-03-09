@@ -145,7 +145,7 @@ A strictly linear pipeline of 8 steps with one input variable. Maps cleanly to s
 ```cell
 ## town-shutdown {
 
-  input param.shutdown_reason : string
+  input param.shutdown_reason : str
 
   # preflight-check : script
     @ cost(max: 0)
@@ -243,10 +243,10 @@ This is the most complex formula in the batch. It defines a multi-attempt interr
 ```cell
 ## shutdown-dance {
 
-  input param.warrant_id : string required
-  input param.target : string required
-  input param.reason : string required
-  input param.requester : string
+  input param.warrant_id : str required
+  input param.target : str required
+  input param.reason : str required
+  input param.requester : str
 
   # warrant-received : script
     @ cost(max: 0)
@@ -406,13 +406,13 @@ Linear 8-step pipeline with configurable gate commands (build, test, lint, typec
 ```cell
 ## polecat-work {
 
-  input param.issue : string required
-  input param.base_branch : string
-  input param.setup_command : string
-  input param.typecheck_command : string
-  input param.test_command : string
-  input param.lint_command : string
-  input param.build_command : string
+  input param.issue : str required
+  input param.base_branch : str
+  input param.setup_command : str
+  input param.typecheck_command : str
+  input param.test_command : str
+  input param.lint_command : str
+  input param.build_command : str
 
   # load-context : script
     @ cost(max: 0)
@@ -526,9 +526,9 @@ Linear 5-step lifecycle tracker. Each step is a monitoring/verification action.
 ```cell
 ## polecat-lease {
 
-  input param.polecat : string required
-  input param.issue : string required
-  input param.rig : string required
+  input param.polecat : str required
+  input param.issue : str required
+  input param.rig : str required
 
   # boot : script
     @ cost(max: 0)
@@ -606,9 +606,9 @@ Linear 7-step pipeline mixing script and LLM cells for PR review.
 ```cell
 ## polecat-review-pr {
 
-  input param.pr_url : string required
-  input param.issue : string required
-  input param.rig : string required
+  input param.pr_url : str required
+  input param.issue : str required
+  input param.rig : str required
 
   # load-context : script
     @ cost(max: 0)
@@ -710,10 +710,10 @@ Linear 8-step pipeline for conflict resolution with merge-slot serialization.
 ```cell
 ## polecat-conflict-resolve {
 
-  input param.task : string required
-  input param.original_mr : string required
-  input param.branch : string required
-  input param.base_branch : string
+  input param.task : str required
+  input param.original_mr : str required
+  input param.branch : str required
+  input param.base_branch : str
 
   # load-task : script
     @ cost(max: 0)
@@ -823,14 +823,14 @@ Iterates over multiple databases with scan/reap/purge/auto-close operations. Use
 ```cell
 ## dog-reaper {
 
-  input param.max_age : string
-  input param.purge_age : string
-  input param.stale_issue_age : string
-  input param.mail_delete_age : string
-  input param.alert_threshold : string
-  input param.dry_run : string
-  input param.databases : string
-  input param.dolt_port : string
+  input param.max_age : str
+  input param.purge_age : str
+  input param.stale_issue_age : str
+  input param.mail_delete_age : str
+  input param.alert_threshold : str
+  input param.dry_run : str
+  input param.databases : str
+  input param.dolt_port : str
 
   # scan : script
     @ cost(max: 0)
@@ -922,7 +922,7 @@ Iterates over databases for backup sync, then rsyncs to offsite storage.
 ```cell
 ## dog-backup {
 
-  input param.databases : string
+  input param.databases : str
 
   # sync : script
     @ cost(max: 0)
@@ -979,10 +979,10 @@ This formula is explicitly ZFC-exempt -- it defines the observable structure but
 ```cell
 ## dog-compactor {
 
-  input param.commit_threshold : string
-  input param.databases : string
-  input param.mode : string
-  input param.keep_recent : string
+  input param.commit_threshold : str
+  input param.databases : str
+  input param.mode : str
+  input param.keep_recent : str
 
   # inspect : script
     @ cost(max: 0)
@@ -1046,8 +1046,8 @@ Linear 3-step probe-inspect-report pipeline. All steps are deterministic checks.
 ```cell
 ## dog-doctor {
 
-  input param.port : string
-  input param.latency_threshold : string
+  input param.port : str
+  input param.latency_threshold : str
 
   # probe : script
     @ cost(max: 0)
@@ -1113,10 +1113,10 @@ Iterates over databases for JSONL export, has spike detection verification, and 
 ```cell
 ## dog-jsonl {
 
-  input param.databases : string
-  input param.scrub : string
-  input param.spike_threshold : string
-  input param.max_push_failures : string
+  input param.databases : str
+  input param.scrub : str
+  input param.spike_threshold : str
+  input param.max_push_failures : str
 
   # export : script
     @ cost(max: 0)
@@ -1189,7 +1189,7 @@ Linear 3-step scan-quarantine-report pipeline. Pure filesystem operations.
 ```cell
 ## dog-phantom-db {
 
-  input param.data_dir : string
+  input param.data_dir : str
 
   # scan : script
     @ cost(max: 0)
@@ -1259,9 +1259,9 @@ Has conditional branching: SQL cleanup (if orphan count is small) vs escalation 
 ```cell
 ## dog-stale-db {
 
-  input param.port : string
-  input param.max_orphans_for_sql : string
-  input param.warn_threshold : string
+  input param.port : str
+  input param.max_orphans_for_sql : str
+  input param.warn_threshold : str
 
   # scan : script
     @ cost(max: 0)

@@ -39,8 +39,8 @@ Requires: `map` (parallel leg dispatch), `preset` (gate/full/refactor/security-f
   -- INPUTS
   -- ================================================================
   input param.pr : number required_unless(param.files, param.branch)
-  input param.files : string required_unless(param.pr, param.branch)
-  input param.branch : string required_unless(param.pr, param.files)
+  input param.files : str required_unless(param.pr, param.branch)
+  input param.branch : str required_unless(param.pr, param.files)
 
   -- ================================================================
   -- PRESETS (named leg selections)
@@ -63,7 +63,7 @@ Requires: `map` (parallel leg dispatch), `preset` (gate/full/refactor/security-f
   -- ================================================================
   -- REUSABLE PROMPT FRAGMENT
   -- ================================================================
-  prompt@ review-base {
+  prompt@ review-base
     > You are a specialized code reviewer participating in a convoy review.
     >
     > ## Context
@@ -79,7 +79,6 @@ Requires: `map` (parallel leg dispatch), `preset` (gate/full/refactor/security-f
     > - Observations (non-blocking)
     >
     > Use specific file:line references. Be actionable. Prioritize impact.
-  }
 
   -- ================================================================
   -- ASPECT DEFINITIONS (data for map)
@@ -90,20 +89,20 @@ Requires: `map` (parallel leg dispatch), `preset` (gate/full/refactor/security-f
   -- ================================================================
   -- PARALLEL LEGS via map
   -- ================================================================
-  map # leg over aspects as aspect
+  map # leg : llm over aspects as aspect
     @ cost(max: 8000) @ quality(min: good) @ model(claude-sonnet)
     system>
-      prompt@ review-base
+      {{@review-base}}
     user>
       > {{aspect.description}}
     format> json {
-      summary: string,
-      critical_issues: [{ file: string, line: number, description: string,
-                          impact: string, suggestion: string }],
-      major_issues: [{ file: string, line: number, description: string,
-                       impact: string, suggestion: string }],
-      minor_issues: [{ file: string, line: number, description: string }],
-      observations: [string]
+      summary: str,
+      critical_issues: [{ file: str, line: number, description: str,
+                          impact: str, suggestion: str }],
+      major_issues: [{ file: str, line: number, description: str,
+                       impact: str, suggestion: str }],
+      minor_issues: [{ file: str, line: number, description: str }],
+      observations: [str]
     }
   #/
 
@@ -137,12 +136,12 @@ Requires: `map` (parallel leg dispatch), `preset` (gate/full/refactor/security-f
       > Deduplicate issues found by multiple legs. Note which legs found them.
     format> json {
       verdict: "approve" | "request-changes" | "comment",
-      executive_summary: string,
-      critical_issues: [{ description: string, found_by: [string] }],
-      major_issues: [{ description: string, theme: string, found_by: [string] }],
-      minor_issues: [string],
-      positive_observations: [string],
-      recommendations: [string]
+      executive_summary: str,
+      critical_issues: [{ description: str, found_by: [str] }],
+      major_issues: [{ description: str, theme: str, found_by: [str] }],
+      minor_issues: [str],
+      positive_observations: [str],
+      recommendations: [str]
     }
     ``` oracle
     json_parse(v);
@@ -178,11 +177,11 @@ Requires: `map`, `prompt@`, `input` declarations. Structurally identical pattern
 ```cell
 ## design {
 
-  input param.problem : string required
-  input param.context : string
-  input param.scope : string = "medium"
+  input param.problem : str required
+  input param.context : str
+  input param.scope : str = "medium"
 
-  prompt@ design-base {
+  prompt@ design-base
     > You are a specialized design analyst participating in a convoy
     > design exploration.
     >
@@ -201,26 +200,25 @@ Requires: `map`, `prompt@`, `input` declarations. Structurally identical pattern
     > - Constraints Identified
     > - Open Questions (needing human input)
     > - Integration Points (cross-dimension connections)
-  }
 
   -- ================================================================
   -- PARALLEL LEGS: api, data, ux, scale, security, integration
   -- ================================================================
-  map # leg over aspects as aspect
+  map # leg : llm over aspects as aspect
     @ cost(max: 10000) @ quality(min: good)
     system>
-      prompt@ design-base
+      {{@design-base}}
     user>
       > {{aspect.description}}
     format> json {
-      summary: string,
-      key_considerations: [string],
-      options: [{ name: string, description: string,
-                  pros: [string], cons: [string], effort: "low"|"medium"|"high" }],
-      recommendation: string,
-      constraints: [string],
-      open_questions: [string],
-      integration_points: [string]
+      summary: str,
+      key_considerations: [str],
+      options: [{ name: str, description: str,
+                  pros: [str], cons: [str], effort: "low"|"medium"|"high" }],
+      recommendation: str,
+      constraints: [str],
+      open_questions: [str],
+      integration_points: [str]
     }
   #/
 
@@ -248,14 +246,14 @@ Requires: `map`, `prompt@`, `input` declarations. Structurally identical pattern
       >
       > Identify conflicts between dimensions. Flag decisions needing human input.
     format> json {
-      executive_summary: string,
-      problem_statement: string,
-      proposed_design: { overview: string, components: [string],
-                         interface_summary: string, data_model_summary: string },
-      decisions: [{ decision: string, rationale: string }],
-      open_questions: [string],
-      risks: [{ risk: string, mitigation: string }],
-      implementation_phases: [{ phase: string, items: [string] }]
+      executive_summary: str,
+      problem_statement: str,
+      proposed_design: { overview: str, components: [str],
+                         interface_summary: str, data_model_summary: str },
+      decisions: [{ decision: str, rationale: str }],
+      open_questions: [str],
+      risks: [{ risk: str, mitigation: str }],
+      implementation_phases: [{ phase: str, items: [str] }]
     }
   #/
 
@@ -284,10 +282,10 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
 ```cell
 ## algebraic-survey {
 
-  input param.issue : string required
-  input param.subsystem : string required
-  input param.packages : string required
-  input param.boundary_notes : string required
+  input param.issue : str required
+  input param.subsystem : str required
+  input param.packages : str required
+  input param.boundary_notes : str required
 
   -- ================================================================
   -- STEP 1: Orient
@@ -310,9 +308,9 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
       > Output: package inventory with file counts, types seen, signatures seen,
       > and initial observations about subsystem boundaries.
     format> json {
-      packages: [{ name: string, files: number, types: [string],
-                   functions: [string], notes: string }],
-      boundary_observations: [string]
+      packages: [{ name: str, files: number, types: [str],
+                   functions: [str], notes: str }],
+      boundary_observations: [str]
     }
   #/
 
@@ -335,9 +333,9 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
       > Look for implicit types: constants/enums (sum types), interfaces
       > (abstract operations), map keys (equivalence classes).
     format> json {
-      types: [{ name: string, kind: string, carrier: string,
-                params: [string], fields: [string],
-                invariants: [string], notes: string }]
+      types: [{ name: str, kind: str, carrier: str,
+                params: [str], fields: [str],
+                invariants: [str], notes: str }]
     }
   #/
 
@@ -358,9 +356,9 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
       > idempotency, commutativity, partiality.
       > Look for hidden operations in goroutines, channels, context.
     format> json {
-      operations: [{ name: string, signature: string,
-                     class: string, composes_with: [string],
-                     properties: [string], notes: string }]
+      operations: [{ name: str, signature: str,
+                     class: str, composes_with: [str],
+                     properties: [str], notes: str }]
     }
   #/
 
@@ -379,11 +377,11 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
       > Look for implicit state machines: boolean gates, mutex, retry loops,
       > channel open/closed.
     format> json {
-      state_machines: [{ name: string, states: [string],
-                         initial: string, terminal: [string],
-                         transitions: [{ from: string, event: string,
-                                         to: string, guard: string, effect: string }],
-                         invariants: [string] }]
+      state_machines: [{ name: str, states: [str],
+                         initial: str, terminal: [str],
+                         transitions: [{ from: str, event: str,
+                                         to: str, guard: str, effect: str }],
+                         invariants: [str] }]
     }
   #/
 
@@ -415,9 +413,9 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
       > f(x, f(y,z)) = f(f(x,y), z) associativity,
       > f(x, e) = x identity element.
     format> json {
-      invariants: [{ name: string, informal: string, formal: string,
-                     evidence: string, confidence: string, notes: string }],
-      algebraic_structure: string
+      invariants: [{ name: str, informal: str, formal: str,
+                     evidence: str, confidence: str, notes: str }],
+      algebraic_structure: str
     }
   #/
 
@@ -440,11 +438,11 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
       > - Look for structure-preserving maps (functors, isomorphisms, embeddings)
       > - Look for monadic patterns (context threading, error returns, builders)
     format> json {
-      boundaries: [{ subsystem: string, direction: string,
-                     interface: [string], coupling: string,
-                     protocol: string, notes: string }],
-      structural_maps: [string],
-      monadic_patterns: [string]
+      boundaries: [{ subsystem: str, direction: str,
+                     interface: [str], coupling: str,
+                     protocol: str, notes: str }],
+      structural_maps: [str],
+      monadic_patterns: [str]
     }
   #/
 
@@ -473,15 +471,15 @@ This is a linear-ish step chain: orient -> {extract-types, extract-operations, e
       > Output: best-fit algebra, confidence, analogy, argument,
       > toy model, open questions, surprises, suggested Lean approach.
     format> json {
-      subsystem: string,
-      best_fit_algebra: string,
-      confidence: string,
-      analogy: string,
-      argument: string,
-      toy_model: string,
-      open_questions: [string],
-      surprises: [string],
-      suggested_lean_approach: string
+      subsystem: str,
+      best_fit_algebra: str,
+      confidence: str,
+      analogy: str,
+      argument: str,
+      toy_model: str,
+      open_questions: [str],
+      surprises: [str],
+      suggested_lean_approach: str
     }
   #/
 
@@ -526,8 +524,8 @@ This is a meta-formula: it creates beads, slings them to polecats, monitors, and
 ```cell
 ## survey-dispatch {
 
-  input param.issue : string required
-  input param.rig : string = "gastown"
+  input param.issue : str required
+  input param.rig : str = "gastown"
 
   -- ================================================================
   -- SUBSYSTEM DEFINITIONS (the collection to map over)
@@ -559,14 +557,15 @@ This is a meta-formula: it creates beads, slings them to polecats, monitors, and
   -- ================================================================
   -- PARALLEL DISPATCH: one algebraic-survey per subsystem
   -- ================================================================
-  map # survey over subsystems.items as sub
+  map # survey : llm over subsystems.items as sub
     -- Each leg is itself a molecule invocation.
     -- This requires Cell to support sub-molecule references.
     @ cost(max: 100000) @ quality(min: good)
-    > Run mol-algebraic-survey for subsystem "{{sub.name}}"
-    > with packages={{sub.packages}}
-    > and boundary_notes="{{sub.boundary_notes}}"
-    > and issue={{param.issue}}
+    user>
+      > Run mol-algebraic-survey for subsystem "{{sub.name}}"
+      > with packages={{sub.packages}}
+      > and boundary_notes="{{sub.boundary_notes}}"
+      > and issue={{param.issue}}
   #/
 
   -- ================================================================
@@ -585,7 +584,7 @@ This is a meta-formula: it creates beads, slings them to polecats, monitors, and
     format> json {
       surveys_complete: number,
       total_surveys: 8,
-      missing: [{ subsystem: string, missing_sections: [string] }],
+      missing: [{ subsystem: str, missing_sections: [str] }],
       ready_for_synthesis: boolean
     }
   #/
@@ -615,8 +614,8 @@ This is the most complex formula: a 7-step pipeline with two human approval gate
 ```cell
 ## idea-to-plan {
 
-  input param.problem : string required
-  input param.context : string = ""
+  input param.problem : str required
+  input param.context : str = ""
 
   -- ================================================================
   -- STEP 1: Intake -- structure idea into draft PRD
@@ -641,15 +640,15 @@ This is the most complex formula: a 7-step pipeline with two human approval gate
       > Don't polish. Breadth over depth. A draft that exposes uncertainty
       > is more useful than one that hides it.
     format> json {
-      review_id: string,
+      review_id: str,
       prd: {
-        problem_statement: string,
-        goals: [string],
-        non_goals: [string],
-        user_stories: [string],
-        constraints: [string],
-        open_questions: [string],
-        rough_approach: string
+        problem_statement: str,
+        goals: [str],
+        non_goals: [str],
+        user_stories: [str],
+        constraints: [str],
+        open_questions: [str],
+        rough_approach: str
       }
     }
   #/
@@ -659,11 +658,12 @@ This is the most complex formula: a 7-step pipeline with two human approval gate
   -- 6 parallel legs: requirements, gaps, ambiguity, feasibility,
   --                  scope, stakeholders
   -- ================================================================
-  # prd-review : molecule(mol-prd-review)
+  # prd-review : mol(mol-prd-review)
     - intake
     @ cost(max: 80000)
-    > problem = {{param.problem}}
-    > context = "See PRD draft: {{intake}}"
+    user>
+      > problem = {{param.problem}}
+      > context = "See PRD draft: {{intake}}"
   #/
 
   -- ================================================================
@@ -689,11 +689,12 @@ This is the most complex formula: a 7-step pipeline with two human approval gate
   -- STEP 4: Generate Implementation Plan (sub-molecule: design convoy)
   -- 6 parallel legs: api, data, ux, scale, security, integration
   -- ================================================================
-  # generate-plan : molecule(design)
+  # generate-plan : mol(design)
     - human-clarify
     @ cost(max: 80000)
-    > problem = {{param.problem}}
-    > context = "PRD with clarifications: {{human-clarify}}"
+    user>
+      > problem = {{param.problem}}
+      > context = "PRD with clarifications: {{human-clarify}}"
   #/
 
   -- ================================================================
@@ -701,12 +702,13 @@ This is the most complex formula: a 7-step pipeline with two human approval gate
   -- 5 parallel legs: completeness, sequencing, risk, scope-creep,
   --                  testability
   -- ================================================================
-  # plan-review : molecule(mol-plan-review)
+  # plan-review : mol(mol-plan-review)
     - generate-plan
     @ cost(max: 60000)
-    > plan = {{generate-plan}}
-    > problem = {{param.problem}}
-    > prd_review = {{prd-review}}
+    user>
+      > plan = {{generate-plan}}
+      > problem = {{param.problem}}
+      > prd_review = {{prd-review}}
   #/
 
   -- ================================================================
@@ -748,10 +750,10 @@ This is the most complex formula: a 7-step pipeline with two human approval gate
       > 3. Create tracking epic
       > 4. Verify dependency graph is acyclic
     format> json {
-      epic: { title: string, description: string },
-      beads: [{ title: string, type: string, description: string,
-                acceptance_criteria: [string],
-                depends_on: [string] }]
+      epic: { title: str, description: str },
+      beads: [{ title: str, type: str, description: str,
+                acceptance_criteria: [str],
+                depends_on: [str] }]
     }
   #/
 
@@ -808,10 +810,10 @@ Structurally identical to code-review and design convoys. 6 legs: requirements, 
 ```cell
 ## prd-review {
 
-  input param.problem : string required
-  input param.context : string
+  input param.problem : str required
+  input param.context : str
 
-  prompt@ prd-review-base {
+  prompt@ prd-review-base
     > You are a specialized analyst participating in a parallel PRD review convoy.
     >
     > ## Context
@@ -827,24 +829,23 @@ Structurally identical to code-review and design convoys. 6 legs: requirements, 
     > - Confidence Assessment (High/Medium/Low with rationale)
     >
     > Be specific. Flag unknowns explicitly. Surface what's missing or unclear.
-  }
 
   -- ================================================================
   -- PARALLEL LEGS
   -- ================================================================
-  map # leg over aspects as aspect
+  map # leg : llm over aspects as aspect
     @ cost(max: 8000) @ quality(min: good)
     system>
-      prompt@ prd-review-base
+      {{@prd-review-base}}
     user>
       > {{aspect.description}}
     format> json {
-      summary: string,
-      critical_gaps: [{ question: string, why_it_matters: string,
-                        suggested_clarification: string }],
-      important_considerations: [string],
-      observations: [string],
-      confidence: { score: "high" | "medium" | "low", rationale: string }
+      summary: str,
+      critical_gaps: [{ question: str, why_it_matters: str,
+                        suggested_clarification: str }],
+      important_considerations: [str],
+      observations: [str],
+      confidence: { score: "high" | "medium" | "low", rationale: str }
     }
   #/
 
@@ -868,14 +869,14 @@ Structurally identical to code-review and design convoys. 6 legs: requirements, 
       > 4. Observations and Suggestions
       > 5. Confidence Assessment table (per dimension: H/M/L)
     format> json {
-      executive_summary: string,
-      critical_questions: [{ category: string, question: string,
-                             impact: string, found_by: [string],
-                             suggested_options: [string] }],
-      non_blocking: [string],
-      observations: [string],
-      confidence: [{ dimension: string, score: string, notes: string }],
-      overall_readiness: string
+      executive_summary: str,
+      critical_questions: [{ category: str, question: str,
+                             impact: str, found_by: [str],
+                             suggested_options: [str] }],
+      non_blocking: [str],
+      observations: [str],
+      confidence: [{ dimension: str, score: str, notes: str }],
+      overall_readiness: str
     }
     ``` oracle
     json_parse(v);
@@ -908,11 +909,11 @@ Structurally identical to code-review and design convoys. 6 legs: requirements, 
 ```cell
 ## plan-review {
 
-  input param.plan : string required
-  input param.problem : string required
-  input param.prd_review : string
+  input param.plan : str required
+  input param.problem : str required
+  input param.prd_review : str
 
-  prompt@ plan-review-base {
+  prompt@ plan-review-base
     > You are a specialized reviewer participating in a parallel plan
     > review convoy.
     >
@@ -930,23 +931,22 @@ Structurally identical to code-review and design convoys. 6 legs: requirements, 
     > - Observations (non-blocking)
     >
     > Be specific. Reference plan sections where possible.
-  }
 
   -- ================================================================
   -- PARALLEL LEGS
   -- ================================================================
-  map # leg over aspects as aspect
+  map # leg : llm over aspects as aspect
     @ cost(max: 8000) @ quality(min: good)
     system>
-      prompt@ plan-review-base
+      {{@plan-review-base}}
     user>
       > {{aspect.description}}
     format> json {
       verdict: "pass" | "pass-with-notes" | "fail",
-      rationale: string,
-      must_fix: [{ issue: string, why: string, resolution: string }],
-      should_fix: [{ issue: string, suggestion: string }],
-      observations: [string]
+      rationale: str,
+      must_fix: [{ issue: str, why: str, resolution: str }],
+      should_fix: [{ issue: str, suggestion: str }],
+      observations: [str]
     }
     ``` oracle
     json_parse(v);
@@ -982,12 +982,12 @@ Structurally identical to code-review and design convoys. 6 legs: requirements, 
       > 5. Observations
     format> json {
       overall_verdict: "GO" | "GO WITH FIXES" | "NO-GO",
-      rationale: string,
-      leg_verdicts: [{ dimension: string, verdict: string, key_finding: string }],
-      must_fix: [{ title: string, found_by: [string],
-                   problem: string, required_fix: string }],
-      should_fix: [string],
-      observations: [string]
+      rationale: str,
+      leg_verdicts: [{ dimension: str, verdict: str, key_finding: str }],
+      must_fix: [{ title: str, found_by: [str],
+                   problem: str, required_fix: str }],
+      should_fix: [str],
+      observations: [str]
     }
     ``` oracle
     json_parse(v);
@@ -1020,10 +1020,10 @@ A linear pipeline: load-context -> survey-code -> detailed-review -> prioritize-
 ```cell
 ## polecat-code-review {
 
-  input param.scope : string required
-  input param.issue : string required
-  input param.focus : string
-  input param.rig : string required
+  input param.scope : str required
+  input param.issue : str required
+  input param.focus : str
+  input param.rig : str required
 
   -- ================================================================
   -- STEP 1: Load Context
@@ -1041,10 +1041,10 @@ A linear pipeline: load-context -> survey-code -> detailed-review -> prioritize-
       > you're reviewing and why.
     format> json {
       scope_type: "file" | "directory",
-      files: [string],
-      recent_changes: [string],
-      focus_area: string,
-      context_notes: string
+      files: [str],
+      recent_changes: [str],
+      focus_area: str,
+      context_notes: str
     }
   #/
 
@@ -1064,11 +1064,11 @@ A linear pipeline: load-context -> survey-code -> detailed-review -> prioritize-
       > - Tests (if any)
       > - Initial impressions: organization, patterns, risky areas
     format> json {
-      components: [{ name: string, type: string, description: string }],
-      dependencies: [string],
+      components: [{ name: str, type: str, description: str }],
+      dependencies: [str],
       has_tests: boolean,
-      initial_impressions: [string],
-      risky_areas: [string]
+      initial_impressions: [str],
+      risky_areas: [str]
     }
   #/
 
@@ -1095,11 +1095,11 @@ A linear pipeline: load-context -> survey-code -> detailed-review -> prioritize-
       >
       > For each issue: file, line, category, severity, description, suggested fix.
     format> json {
-      findings: [{ file: string, line: number,
+      findings: [{ file: str, line: number,
                    category: "correctness" | "security" | "error-handling" |
                              "performance" | "maintainability" | "testing",
                    severity: "critical" | "high" | "medium" | "low",
-                   description: string, suggestion: string }]
+                   description: str, suggestion: str }]
     }
   #/
 
@@ -1120,12 +1120,12 @@ A linear pipeline: load-context -> survey-code -> detailed-review -> prioritize-
       >
       > For P0 issues: flag for immediate escalation.
     format> json {
-      p0: [{ file: string, line: number, description: string,
-             suggestion: string }],
-      p1: [{ file: string, line: number, description: string,
-             suggestion: string }],
-      p2: [{ file: string, line: number, description: string }],
-      p3: [{ file: string, line: number, description: string }],
+      p0: [{ file: str, line: number, description: str,
+             suggestion: str }],
+      p1: [{ file: str, line: number, description: str,
+             suggestion: str }],
+      p2: [{ file: str, line: number, description: str }],
+      p3: [{ file: str, line: number, description: str }],
       has_critical: boolean
     }
     ``` oracle
@@ -1152,7 +1152,7 @@ A linear pipeline: load-context -> survey-code -> detailed-review -> prioritize-
       > - Description: location, issue, impact, suggested fix
     format> json {
       beads: [{ type: "bug" | "task", priority: number,
-                title: string, description: string }],
+                title: str, description: str }],
       total_findings: number
     }
   #/
@@ -1180,7 +1180,7 @@ A linear pipeline: load-context -> survey-code -> detailed-review -> prioritize-
       p2_count: number,
       p3_count: number,
       overall_assessment: "healthy" | "needs-attention" | "significant-issues",
-      key_themes: [string],
+      key_themes: [str],
       beads_filed: number
     }
   #/

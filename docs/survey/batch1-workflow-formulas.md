@@ -35,57 +35,62 @@ The canonical engineering workflow. Linear dependency chain with one input varia
 ```cell
 ## shiny {
 
-  input param.feature : string required
-  input param.assignee : string
+  input param.feature : str required
+  input param.assignee : str
 
   # design : llm
     @ cost(max: 8000) @ quality(min: good)
-    > Think carefully about architecture before writing code.
-    > Consider: How does this fit into the existing system?
-    > What are the edge cases? What could go wrong?
-    > Is there a simpler approach?
-    >
-    > Feature: {{param.feature}}
-    >
-    > Produce a design doc covering approach, trade-offs,
-    > and files to change.
+    user>
+      > Think carefully about architecture before writing code.
+      > Consider: How does this fit into the existing system?
+      > What are the edge cases? What could go wrong?
+      > Is there a simpler approach?
+      >
+      > Feature: {{param.feature}}
+      >
+      > Produce a design doc covering approach, trade-offs,
+      > and files to change.
     accept> Design doc committed covering approach, trade-offs, and files to change
   #/
 
   # implement : llm
     - design
     @ cost(max: 12000) @ quality(min: good)
-    > Write the code for {{param.feature}}.
-    > Follow the design: {{design}}
-    > Keep it simple. Don't gold-plate.
+    user>
+      > Write the code for {{param.feature}}.
+      > Follow the design: {{design}}
+      > Keep it simple. Don't gold-plate.
     accept> All files from the design doc are modified/created and committed
   #/
 
   # review : llm
     - implement
     @ cost(max: 8000) @ quality(min: good)
-    > Review the implementation: {{implement}}
-    > Check for: Does it match the design? Are there obvious bugs?
-    > Is it readable and maintainable? Are there security concerns?
+    user>
+      > Review the implementation: {{implement}}
+      > Check for: Does it match the design? Are there obvious bugs?
+      > Is it readable and maintainable? Are there security concerns?
     accept> Self-review complete, no obvious bugs, code is readable and secure
   #/
 
   # test : llm
     - review
     @ cost(max: 10000) @ quality(min: good)
-    > Write and run tests for {{param.feature}}.
-    > Unit tests for new code, integration tests if needed,
-    > run the full test suite, fix any regressions.
-    > Review feedback: {{review}}
+    user>
+      > Write and run tests for {{param.feature}}.
+      > Unit tests for new code, integration tests if needed,
+      > run the full test suite, fix any regressions.
+      > Review feedback: {{review}}
     accept> All tests pass, no regressions, test coverage for new code
   #/
 
   # submit : llm
     - test
     @ cost(max: 4000) @ quality(min: adequate)
-    > Submit for merge. Final check: git status, git diff.
-    > Commit with clear message. Follow your role's git workflow.
-    > Test results: {{test}}
+    user>
+      > Submit for merge. Final check: git status, git diff.
+      > Commit with clear message. Follow your role's git workflow.
+      > Test results: {{test}}
     accept> Clean git status, clear commit message, code pushed to feature branch
   #/
 
@@ -120,85 +125,94 @@ Cell has no aspect-oriented programming model. There is no `advice`, `pointcut`,
 
 ## shiny-secure {
 
-  input param.feature : string required
-  input param.assignee : string
+  input param.feature : str required
+  input param.assignee : str
 
   # design : llm
     @ cost(max: 8000) @ quality(min: good)
-    > Think carefully about architecture for {{param.feature}}.
-    > Cover approach, trade-offs, and files to change.
+    user>
+      > Think carefully about architecture for {{param.feature}}.
+      > Cover approach, trade-offs, and files to change.
     accept> Design doc committed
   #/
 
   # implement-security-prescan : llm
     - design
     @ cost(max: 4000) @ quality(min: good)
-    > Pre-implementation security check.
-    > Review for secrets/credentials in scope.
-    > Check dependencies for known vulnerabilities.
-    > Design: {{design}}
+    user>
+      > Pre-implementation security check.
+      > Review for secrets/credentials in scope.
+      > Check dependencies for known vulnerabilities.
+      > Design: {{design}}
     accept> No pre-existing security issues in scope
   #/
 
   # implement : llm
     - implement-security-prescan
     @ cost(max: 12000) @ quality(min: good)
-    > Write the code for {{param.feature}}.
-    > Follow the design: {{design}}
-    > Security prescan clear: {{implement-security-prescan}}
+    user>
+      > Write the code for {{param.feature}}.
+      > Follow the design: {{design}}
+      > Security prescan clear: {{implement-security-prescan}}
     accept> All files modified/created and committed
   #/
 
   # implement-security-postscan : llm
     - implement
     @ cost(max: 6000) @ quality(min: excellent)
-    > Post-implementation security scan.
-    > Scan new code for vulnerabilities (SAST).
-    > Check for hardcoded secrets.
-    > Review for OWASP Top 10 issues.
-    > Implementation: {{implement}}
+    user>
+      > Post-implementation security scan.
+      > Scan new code for vulnerabilities (SAST).
+      > Check for hardcoded secrets.
+      > Review for OWASP Top 10 issues.
+      > Implementation: {{implement}}
     accept> No vulnerabilities found in new code
   #/
 
   # review : llm
     - implement-security-postscan
     @ cost(max: 8000) @ quality(min: good)
-    > Review the implementation: {{implement}}
-    > Security postscan: {{implement-security-postscan}}
+    user>
+      > Review the implementation: {{implement}}
+      > Security postscan: {{implement-security-postscan}}
     accept> Self-review complete, no obvious bugs
   #/
 
   # test : llm
     - review
     @ cost(max: 10000) @ quality(min: good)
-    > Write and run tests for {{param.feature}}.
-    > Review: {{review}}
+    user>
+      > Write and run tests for {{param.feature}}.
+      > Review: {{review}}
     accept> All tests pass, no regressions
   #/
 
   # submit-security-prescan : llm
     - test
     @ cost(max: 4000) @ quality(min: good)
-    > Pre-submission security check.
-    > Final vulnerability scan before merge.
-    > Test results: {{test}}
+    user>
+      > Pre-submission security check.
+      > Final vulnerability scan before merge.
+      > Test results: {{test}}
     accept> Final security scan clean
   #/
 
   # submit : llm
     - submit-security-prescan
     @ cost(max: 4000) @ quality(min: adequate)
-    > Submit for merge. Final check: git status, git diff.
-    > Security prescan: {{submit-security-prescan}}
+    user>
+      > Submit for merge. Final check: git status, git diff.
+      > Security prescan: {{submit-security-prescan}}
     accept> Clean git status, code pushed
   #/
 
   # submit-security-postscan : llm
     - submit
     @ cost(max: 4000) @ quality(min: good)
-    > Post-submission security verification.
-    > Confirm no new vulnerabilities introduced.
-    > Submission: {{submit}}
+    user>
+      > Post-submission security verification.
+      > Confirm no new vulnerabilities introduced.
+      > Submission: {{submit}}
     accept> No new vulnerabilities post-submission
   #/
 
@@ -235,13 +249,14 @@ Cell has no `extends` or `compose.expand` mechanism. The expansion template in `
 
 ## shiny-enterprise {
 
-  input param.feature : string required
-  input param.assignee : string
+  input param.feature : str required
+  input param.assignee : str
 
   # design : llm
     @ cost(max: 8000) @ quality(min: good)
-    > Think carefully about architecture for {{param.feature}}.
-    > Cover approach, trade-offs, and files to change.
+    user>
+      > Think carefully about architecture for {{param.feature}}.
+      > Cover approach, trade-offs, and files to change.
     accept> Design doc committed
   #/
 
@@ -250,70 +265,78 @@ Cell has no `extends` or `compose.expand` mechanism. The expansion template in `
   # implement-draft : llm
     - design
     @ cost(max: 12000) @ quality(min: adequate)
-    > Initial attempt at implementing {{param.feature}}.
-    > Design: {{design}}
-    > Don't aim for perfection. Get the shape right. Breadth over depth.
+    user>
+      > Initial attempt at implementing {{param.feature}}.
+      > Design: {{design}}
+      > Don't aim for perfection. Get the shape right. Breadth over depth.
     accept> Draft implementation complete
   #/
 
   # implement-refine-1 : llm
     - implement-draft
     @ cost(max: 10000) @ quality(min: good)
-    > First refinement pass. Focus: CORRECTNESS.
-    > Fix errors, bugs, mistakes. Is the logic sound?
-    > Draft: {{implement-draft}}
+    user>
+      > First refinement pass. Focus: CORRECTNESS.
+      > Fix errors, bugs, mistakes. Is the logic sound?
+      > Draft: {{implement-draft}}
     accept> Correctness pass complete
   #/
 
   # implement-refine-2 : llm
     - implement-refine-1
     @ cost(max: 8000) @ quality(min: good)
-    > Second refinement pass. Focus: CLARITY.
-    > Can someone else understand this? Simplify. Remove jargon.
-    > After correctness: {{implement-refine-1}}
+    user>
+      > Second refinement pass. Focus: CLARITY.
+      > Can someone else understand this? Simplify. Remove jargon.
+      > After correctness: {{implement-refine-1}}
     accept> Clarity pass complete
   #/
 
   # implement-refine-3 : llm
     - implement-refine-2
     @ cost(max: 8000) @ quality(min: good)
-    > Third refinement pass. Focus: EDGE CASES.
-    > What could go wrong? What's missing? Handle the unusual.
-    > After clarity: {{implement-refine-2}}
+    user>
+      > Third refinement pass. Focus: EDGE CASES.
+      > What could go wrong? What's missing? Handle the unusual.
+      > After clarity: {{implement-refine-2}}
     accept> Edge cases pass complete
   #/
 
   # implement-refine-4 : llm
     - implement-refine-3
     @ cost(max: 8000) @ quality(min: excellent)
-    > Final polish. Focus: EXCELLENCE.
-    > This is the last pass. Make it shine.
-    > Is this something you'd be proud to ship?
-    > After edge cases: {{implement-refine-3}}
+    user>
+      > Final polish. Focus: EXCELLENCE.
+      > This is the last pass. Make it shine.
+      > Is this something you'd be proud to ship?
+      > After edge cases: {{implement-refine-3}}
     accept> Final polish complete
   #/
 
   # review : llm
     - implement-refine-4
     @ cost(max: 8000) @ quality(min: good)
-    > Review the implementation: {{implement-refine-4}}
-    > Does it match the design? Obvious bugs? Readable?
+    user>
+      > Review the implementation: {{implement-refine-4}}
+      > Does it match the design? Obvious bugs? Readable?
     accept> Self-review complete
   #/
 
   # test : llm
     - review
     @ cost(max: 10000) @ quality(min: good)
-    > Write and run tests for {{param.feature}}.
-    > Review: {{review}}
+    user>
+      > Write and run tests for {{param.feature}}.
+      > Review: {{review}}
     accept> All tests pass
   #/
 
   # submit : llm
     - test
     @ cost(max: 4000) @ quality(min: adequate)
-    > Submit for merge. Final check.
-    > Test results: {{test}}
+    user>
+      > Submit for merge. Final check.
+      > Test results: {{test}}
     accept> Clean git status, code pushed
   #/
 
@@ -379,11 +402,12 @@ A long linear release workflow. Each step has extensive description with embedde
 ```cell
 ## gastown-release {
 
-  input param.version : string required
+  input param.version : str required
 
   # preflight-workspaces : script
     @ cost(max: 0)
-    > Before releasing, ensure no gastown workspaces have uncommitted work.
+    user>
+      > Before releasing, ensure no gastown workspaces have uncommitted work.
     ``` sh
     for dir in $GT_ROOT/gastown/crew/* $GT_ROOT/gastown/mayor; do
       if [ -d "$dir/.git" ] || [ -d "$dir" ]; then
@@ -436,12 +460,13 @@ A long linear release workflow. Each step has extensive description with embedde
   # update-changelog : llm
     - review-changes
     @ cost(max: 8000) @ quality(min: good)
-    > Write the CHANGELOG.md [Unreleased] section for version {{param.version}}.
-    > Changes since last release: {{review-changes}}
-    >
-    > Format: Keep a Changelog (https://keepachangelog.com)
-    > Sections: Added, Changed, Fixed, Deprecated, Removed.
-    > Group related commits. The bump script stamps the date.
+    user>
+      > Write the CHANGELOG.md [Unreleased] section for version {{param.version}}.
+      > Changes since last release: {{review-changes}}
+      >
+      > Format: Keep a Changelog (https://keepachangelog.com)
+      > Sections: Added, Changed, Fixed, Deprecated, Removed.
+      > Group related commits. The bump script stamps the date.
     accept> CHANGELOG.md updated with all changes for {{param.version}}
   #/
 
@@ -449,13 +474,14 @@ A long linear release workflow. Each step has extensive description with embedde
     - update-changelog
     - review-changes
     @ cost(max: 6000) @ quality(min: good)
-    > Add entry to versionChanges in internal/cmd/info.go for {{param.version}}.
-    > This powers `gt info --whats-new`.
-    > Changes: {{review-changes}}
-    > Changelog: {{update-changelog}}
-    >
-    > Focus on agent-relevant and workflow-impacting changes.
-    > Prefix with NEW:, CHANGED:, FIX:, or DEPRECATED:.
+    user>
+      > Add entry to versionChanges in internal/cmd/info.go for {{param.version}}.
+      > This powers `gt info --whats-new`.
+      > Changes: {{review-changes}}
+      > Changelog: {{update-changelog}}
+      >
+      > Focus on agent-relevant and workflow-impacting changes.
+      > Prefix with NEW:, CHANGED:, FIX:, or DEPRECATED:.
     accept> info.go versionChanges updated for {{param.version}}
   #/
 
@@ -533,9 +559,10 @@ A long linear release workflow. Each step has extensive description with embedde
   # release-complete : llm
     - restart-daemons
     @ cost(max: 2000) @ quality(min: adequate)
-    > Release v{{param.version}} is complete.
-    > Summarize: workspaces verified, versions updated, tag pushed,
-    > local binary rebuilt, daemons restarted.
+    user>
+      > Release v{{param.version}} is complete.
+      > Summarize: workspaces verified, versions updated, tag pushed,
+      > local binary rebuilt, daemons restarted.
     accept> Release summary produced
   #/
 
@@ -569,7 +596,7 @@ Similar to gastown-release but longer, with CI verification steps and a fan-in w
 ```cell
 ## beads-release {
 
-  input param.version : string required
+  input param.version : str required
 
   # preflight-git : script
     @ cost(max: 0)
@@ -600,18 +627,20 @@ Similar to gastown-release but longer, with CI verification steps and a fan-in w
   # update-changelog : llm
     - review-changes
     @ cost(max: 8000) @ quality(min: good)
-    > Write the CHANGELOG.md [Unreleased] section for {{param.version}}.
-    > Changes: {{review-changes}}
-    > Format: Keep a Changelog. Sections: Added, Changed, Fixed, Documentation.
+    user>
+      > Write the CHANGELOG.md [Unreleased] section for {{param.version}}.
+      > Changes: {{review-changes}}
+      > Format: Keep a Changelog. Sections: Added, Changed, Fixed, Documentation.
     accept> CHANGELOG.md updated
   #/
 
   # update-info-go : llm
     - update-changelog
     @ cost(max: 6000) @ quality(min: good)
-    > Add entry to versionChanges in cmd/bd/info.go for {{param.version}}.
-    > Focus on workflow-impacting changes agents need to know.
-    > Changelog: {{update-changelog}}
+    user>
+      > Add entry to versionChanges in cmd/bd/info.go for {{param.version}}.
+      > Focus on workflow-impacting changes agents need to know.
+      > Changelog: {{update-changelog}}
     accept> info.go updated
   #/
 
@@ -682,10 +711,11 @@ Similar to gastown-release but longer, with CI verification steps and a fan-in w
   # wait-ci : llm
     - push-tag
     @ cost(max: 4000) @ quality(min: adequate)
-    > Monitor GitHub Actions for release completion.
-    > https://github.com/steveyegge/beads/actions
-    > Expected time: 5-10 minutes.
-    > Watch for: build artifacts, test pass, npm publish, PyPI publish.
+    user>
+      > Monitor GitHub Actions for release completion.
+      > https://github.com/steveyegge/beads/actions
+      > Expected time: 5-10 minutes.
+      > Watch for: build artifacts, test pass, npm publish, PyPI publish.
     accept> CI completed successfully
   #/
 
@@ -750,9 +780,10 @@ Similar to gastown-release but longer, with CI verification steps and a fan-in w
   # release-complete : llm
     - restart-daemons
     @ cost(max: 2000) @ quality(min: adequate)
-    > Release v{{param.version}} is complete.
-    > All versions updated, tag pushed, CI passed,
-    > npm and PyPI published, local install updated, daemons restarted.
+    user>
+      > Release v{{param.version}} is complete.
+      > All versions updated, tag pushed, CI passed,
+      > npm and PyPI published, local install updated, daemons restarted.
     accept> Release summary produced
   #/
 
@@ -856,14 +887,15 @@ A durability proof: 3-disk Towers of Hanoi with pre-computed moves. Each step is
 ```cell
 ## towers-of-hanoi {
 
-  input param.source_peg : string   -- default "A"
-  input param.target_peg : string   -- default "C"
-  input param.auxiliary_peg : string -- default "B"
+  input param.source_peg : str   -- default "A"
+  input param.target_peg : str   -- default "C"
+  input param.auxiliary_peg : str -- default "B"
 
   # setup : script
     @ cost(max: 0)
-    > Verify initial state: All 3 disks stacked on peg {{param.source_peg}}.
-    > Largest on bottom.
+    user>
+      > Verify initial state: All 3 disks stacked on peg {{param.source_peg}}.
+      > Largest on bottom.
     ``` sh
     echo "Initial state verified: 3 disks on peg {{param.source_peg}}"
     ```

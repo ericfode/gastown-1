@@ -77,7 +77,7 @@
     > Output exactly one of: NOTHING, NUDGE, WAKE, INTERRUPT, START
     format> json {
       "action": "NOTHING | NUDGE | WAKE | INTERRUPT | START",
-      "reason": "string"
+      "reason": "str"
     }
   #/
 
@@ -161,7 +161,7 @@
 ```cell
 ## convoy-cleanup {
 
-  input param.convoy : string required
+  input param.convoy : str required
 
   # load-convoy : script
     ``` sh
@@ -184,10 +184,10 @@
     > - Contributors (unique assignees)
     > - Key outcomes
     format> json {
-      "summary_text": "string",
-      "duration": "string",
+      "summary_text": "str",
+      "duration": "str",
       "issue_count": "number",
-      "contributor_list": "string"
+      "contributor_list": "str"
     }
   #/
 
@@ -248,7 +248,7 @@
 ```cell
 ## convoy-feed {
 
-  input param.convoy : string required
+  input param.convoy : str required
 
   # load-convoy : script
     ``` sh
@@ -588,7 +588,7 @@
 ```cell
 ## dep-propagate {
 
-  input param.resolved_issue : string required
+  input param.resolved_issue : str required
 
   # load-resolved-issue : script
     ``` sh
@@ -667,7 +667,7 @@
 ```cell
 ## digest-generate {
 
-  input param.period : string required  -- "daily" | "weekly" | "custom"
+  input param.period : str required  -- "daily" | "weekly" | "custom"
 
   # determine-period : script
     ``` sh
@@ -715,8 +715,8 @@
     > - Agent health metrics
     > - Trends
     format> json {
-      "formatted_digest": "string",
-      "date": "string"
+      "formatted_digest": "str",
+      "date": "str"
     }
   #/
 
@@ -768,7 +768,7 @@
 ```cell
 ## orphan-scan {
 
-  input param.scope : string required  -- "town" or rig name
+  input param.scope : str required  -- "town" or rig name
 
   # determine-scope : script
     ``` sh
@@ -830,7 +830,7 @@
     > For each orphan, assign an action:
     > RESET (return to open), REASSIGN, RECOVER, ESCALATE, or BURN
     format> json {
-      "orphans": [{"id": "string", "type": "string", "action": "string", "reason": "string"}]
+      "orphans": [{"id": "str", "type": "str", "action": "str", "reason": "str"}]
     }
   #/
 
@@ -898,18 +898,18 @@
 ```cell
 ## refinery-patrol {
 
-  input param.run_tests : string           -- "true" | "false"
-  input param.test_command : string        -- e.g. "go test ./..."
-  input param.setup_command : string
-  input param.typecheck_command : string
-  input param.lint_command : string
-  input param.build_command : string
-  input param.target_branch : string       -- default "main"
-  input param.delete_merged_branches : string  -- "true" | "false"
-  input param.judgment_enabled : string    -- "true" | "false"
-  input param.review_depth : string        -- "quick" | "standard" | "deep"
-  input param.integration_branch_refinery_enabled : string
-  input param.integration_branch_auto_land : string
+  input param.run_tests : str           -- "true" | "false"
+  input param.test_command : str        -- e.g. "go test ./..."
+  input param.setup_command : str
+  input param.typecheck_command : str
+  input param.lint_command : str
+  input param.build_command : str
+  input param.target_branch : str       -- default "main"
+  input param.delete_merged_branches : str  -- "true" | "false"
+  input param.judgment_enabled : str    -- "true" | "false"
+  input param.review_depth : str        -- "quick" | "standard" | "deep"
+  input param.integration_branch_refinery_enabled : str
+  input param.integration_branch_auto_land : str
 
   # inbox-check : script
     ``` sh
@@ -965,7 +965,7 @@
     format> json {
       "score": "number",
       "recommendation": "approve | request_changes",
-      "issues": [{"category": "string", "description": "string"}]
+      "issues": [{"category": "str", "description": "str"}]
     }
   #/
 
@@ -1072,7 +1072,7 @@
 ```cell
 ## session-gc {
 
-  input param.mode : string required  -- "conservative" | "aggressive"
+  input param.mode : str required  -- "conservative" | "aggressive"
 
   # determine-mode : script
     ``` sh
@@ -1149,11 +1149,11 @@
 ```cell
 ## sync-workspace {
 
-  input param.setup_command : string
-  input param.typecheck_command : string
-  input param.lint_command : string
-  input param.test_command : string
-  input param.build_command : string
+  input param.setup_command : str
+  input param.typecheck_command : str
+  input param.lint_command : str
+  input param.test_command : str
+  input param.build_command : str
 
   # assess-state : script
     ``` sh
