@@ -1,0 +1,135 @@
+-- Shutdown Dance — death warrant state machine for Dogs.
+-- INTERROGATING → EVALUATING → (PARDONED | retry | EXECUTING) → EPITAPH
+-- Demonstrates: decision cells, conditional wires, bounded retry loops.
+
+## shutdown-dance
+
+  input param.target_session : str required
+  input param.warrant_id : str required
+  input param.max_attempts : number default(3)
+
+  -- Attempt 1: interrogate with short timeout (60s)
+  # interrogate-1 : script
+    ```bash
+    # Send health check to target session
+    tmux send-keys -t "{{param.target_session}}" \
+      "echo ALIVE_CHECK_{{param.warrant_id}}" Enter
+    sleep 60
+    # Capture response
+    tmux capture-pane -t "{{param.target_session}}" -p | tail -20
+    ```
+  #/
+
+  # evaluate-1 : decision
+    - interrogate-1
+    @cost(max: 2000)
+    system>
+      You are evaluating whether a session responded to a health check.
+    context>
+      Session output after interrogation:
+      {{interrogate-1}}
+    user>
+      Does the output contain "ALIVE" anywhere?
+      If yes: PARDONED. If no: RETRY.
+    format> verdict
+      { result: "ALIVE" | "NO_RESPONSE", evidence: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.result in ["ALIVE", "NO_RESPONSE"];
+    ```
+  #/
+
+  -- Attempt 2: longer timeout (120s), only if attempt 1 failed
+  # interrogate-2 : script
+    - evaluate-1
+    -- Conditional: only runs if evaluate-1 says NO_RESPONSE
+    ```bash
+    if [ "{{evaluate-1.result}}" = "ALIVE" ]; then
+      echo "SKIP: pardoned at attempt 1"
+      exit 0
+    fi
+    tmux send-keys -t "{{param.target_session}}" \
+      "echo ALIVE_CHECK_{{param.warrant_id}}_2" Enter
+    sleep 120
+    tmux capture-pane -t "{{param.target_session}}" -p | tail -20
+    ```
+  #/
+
+  # evaluate-2 : decision
+    - interrogate-2
+    @cost(max: 2000)
+    system>
+      You are evaluating health check response (attempt 2 of 3).
+    context>
+      {{interrogate-2}}
+    user>
+      Does the output contain "ALIVE"? Or was this skipped (pardoned)?
+    format> verdict
+      { result: "ALIVE" | "NO_RESPONSE" | "SKIPPED", evidence: str }
+  #/
+
+  -- Attempt 3: final chance (240s)
+  # interrogate-3 : script
+    - evaluate-2
+    ```bash
+    if [ "{{evaluate-2.result}}" != "NO_RESPONSE" ]; then
+      echo "SKIP: pardoned or skipped"
+      exit 0
+    fi
+    tmux send-keys -t "{{param.target_session}}" \
+      "echo ALIVE_CHECK_{{param.warrant_id}}_3" Enter
+    sleep 240
+    tmux capture-pane -t "{{param.target_session}}" -p | tail -20
+    ```
+  #/
+
+  # evaluate-3 : decision
+    - interrogate-3
+    @cost(max: 2000)
+    system>
+      You are evaluating health check response (final attempt).
+    context>
+      {{interrogate-3}}
+    user>
+      Does the output contain "ALIVE"? Or was this skipped?
+      This is the FINAL attempt. If NO_RESPONSE, the session will be killed.
+    format> verdict
+      { result: "ALIVE" | "NO_RESPONSE" | "SKIPPED", evidence: str }
+  #/
+
+  -- Terminal state: execute or pardon
+  # execute-or-pardon : script
+    - evaluate-3
+    ```bash
+    # Check all three evaluations
+    R1="{{evaluate-1.result}}"
+    R2="{{evaluate-2.result}}"
+    R3="{{evaluate-3.result}}"
+
+    if [ "$R1" = "ALIVE" ] || [ "$R2" = "ALIVE" ] || [ "$R3" = "ALIVE" ]; then
+      echo "outcome=PARDONED"
+      echo "Session responded. Warrant cancelled."
+    else
+      echo "outcome=EXECUTED"
+      echo "Killing session: {{param.target_session}}"
+      tmux kill-session -t "{{param.target_session}}" 2>/dev/null
+    fi
+    ```
+  #/
+
+  # epitaph : script
+    - execute-or-pardon
+    ```bash
+    gt mail send deacon/ -s "WARRANT_COMPLETE: {{param.warrant_id}}" -m "
+Target: {{param.target_session}}
+Outcome: $(echo '{{execute-or-pardon}}' | grep 'outcome=' | cut -d= -f2)
+Attempts: 3
+Warrant: {{param.warrant_id}}"
+    echo "dance_complete=true"
+    ```
+  #/
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/

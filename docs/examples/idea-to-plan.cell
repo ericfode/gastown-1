@@ -1,0 +1,123 @@
+-- Idea to Plan — full pipeline from vague idea to approved beads.
+-- Demonstrates: sub-molecule invocation, human gates, convoy composition.
+--
+-- Pipeline: intake → prd-review (convoy) → human-clarify →
+--           generate-plan (convoy) → plan-review (convoy) →
+--           human-approve → create-beads
+
+## idea-to-plan
+
+  input param.problem : str required
+  input param.context : str default("")
+
+  # intake : llm
+    @cost(max: 8000)
+    system>
+      You are a product manager structuring vague ideas into PRDs.
+    user>
+      The user described this idea:
+      {{param.problem}}
+
+      Additional context:
+      {{param.context}}
+
+      Structure it into a draft PRD with:
+      - Problem statement
+      - Success criteria
+      - Scope (in/out)
+      - Key requirements
+      - Open questions
+    format> prd
+      {
+        problem: str,
+        success_criteria: [str],
+        scope_in: [str],
+        scope_out: [str],
+        requirements: [str],
+        open_questions: [str]
+      }
+  #/
+
+  -- Sub-molecule: 6 polecats review PRD in parallel
+  # prd-review : mol(mol-prd-review)
+    - intake
+    vars>
+      prd = {{intake}}
+  #/
+
+  -- Human gate: agent presents questions, user answers
+  # human-clarify : llm
+    - prd-review
+    @cost(max: 4000)
+    system>
+      You are facilitating a conversation between the PRD review
+      findings and the original requester.
+    context>
+      Original idea: {{param.problem}}
+      PRD review findings: {{prd-review}}
+    user>
+      Present the consolidated questions and gaps from the PRD review.
+      Ask the user for clarification on each open question.
+      Incorporate their answers into a refined PRD.
+    accept>
+      All critical questions answered. Refined PRD ready.
+  #/
+
+  -- Sub-molecule: 6 polecats design the implementation in parallel
+  # generate-plan : mol(design)
+    - human-clarify
+    vars>
+      problem = {{human-clarify}}
+      context = {{param.context}}
+  #/
+
+  -- Sub-molecule: 5 polecats review the plan
+  # plan-review : mol(mol-plan-review)
+    - generate-plan
+    vars>
+      plan = {{generate-plan}}
+  #/
+
+  -- Human gate: approve or reject
+  # human-approve : decision
+    - plan-review
+    @cost(max: 4000)
+    system>
+      You are presenting an implementation plan for approval.
+    context>
+      Plan: {{generate-plan}}
+      Review: {{plan-review}}
+    user>
+      Present the plan review verdict.
+      If the plan passes review, recommend approval.
+      If it has critical issues, recommend revision.
+    format> verdict
+      { approved: "true" | "false", conditions: [str], blockers: [str] }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["approved"]);
+    ```
+  #/
+
+  -- Create beads from approved plan
+  # create-beads : script
+    - human-approve
+    ```bash
+    if [ "{{human-approve.approved}}" != "true" ]; then
+      echo "Plan not approved. Blockers: {{human-approve.blockers}}"
+      exit 1
+    fi
+    echo "Creating beads from approved plan..."
+    # The agent reads generate-plan output and creates bd issues
+    echo "beads_created=true"
+    ```
+
+    ```oracle
+    assert output contains "beads_created=true";
+    ```
+  #/
+
+  squash> trigger: on_complete template: plan include_metrics: true
+
+##/
