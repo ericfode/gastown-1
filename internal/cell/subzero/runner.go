@@ -2,6 +2,7 @@ package subzero
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/steveyegge/gastown/internal/cell/parser"
@@ -47,6 +48,14 @@ func (r *Runner) Run(ctx context.Context, mol *parser.Molecule) (map[string]*Cel
 		if err != nil {
 			return outputs, fmt.Errorf("cell %q: %w", name, err)
 		}
+
+		// Run oracle validation if present
+		if cell.cell != nil && cell.cell.Oracle != nil {
+			if oracleErr := EvalOracle(cell.cell.Oracle, result.Output); oracleErr != nil {
+				return outputs, fmt.Errorf("cell %q oracle failed: %w", name, oracleErr)
+			}
+		}
+
 		outputs[name] = result
 		executed++
 	}
@@ -167,7 +176,51 @@ func (r *Runner) buildCellExec(info *cellInfo, outputs map[string]*CellResult) *
 			Role:    ps.Tag,
 			Content: content,
 		})
+
+		// Generate mock-friendly JSON from format> spec
+		if ps.Format != nil && len(ps.Format.Fields) > 0 {
+			exec.FormatJSON = generateMockJSON(ps.Format)
+		}
 	}
 
 	return exec
+}
+
+// generateMockJSON creates a minimal valid JSON object from a FormatSpec.
+func generateMockJSON(spec *parser.FormatSpec) string {
+	obj := make(map[string]interface{})
+	for _, f := range spec.Fields {
+		obj[f.Name] = mockValue(f.Type)
+	}
+	b, _ := json.Marshal(obj)
+	return string(b)
+}
+
+func mockValue(ft parser.FormatType) interface{} {
+	switch ft.Kind {
+	case "str":
+		return "mock_value"
+	case "number":
+		return 1
+	case "boolean":
+		return true
+	case "array":
+		if ft.ElementType != nil {
+			return []interface{}{mockValue(*ft.ElementType)}
+		}
+		return []interface{}{}
+	case "object":
+		obj := make(map[string]interface{})
+		for _, f := range ft.Fields {
+			obj[f.Name] = mockValue(f.Type)
+		}
+		return obj
+	case "enum":
+		if len(ft.EnumValues) > 0 {
+			return ft.EnumValues[0]
+		}
+		return "mock_enum"
+	default:
+		return "mock"
+	}
 }
