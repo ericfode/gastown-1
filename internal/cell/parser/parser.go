@@ -222,7 +222,7 @@ func (p *Parser) parseCell(isMeta bool) *Cell {
 	pos := p.currentPos()
 	p.expect(TokenHash) // #
 
-	name := p.expectIdent()
+	name := p.parseTemplateName()
 	p.expect(TokenColon) // :
 	cellType := p.parseCellType()
 
@@ -316,6 +316,13 @@ func (p *Parser) parseCellBody(cell *Cell) {
 				last.Lines = append(last.Lines, text)
 			}
 
+		case p.check(TokenIdent) && p.current().Value == "param" && p.checkParamAssign():
+			// param.X = value assignment (used in mol() cells)
+			pa := p.parseParamAssign()
+			if pa != nil {
+				cell.ParamAssigns = append(cell.ParamAssigns, pa)
+			}
+
 		default:
 			// Unknown — skip
 			p.addError("unexpected token in cell body: %s", p.current().Value)
@@ -324,11 +331,64 @@ func (p *Parser) parseCellBody(cell *Cell) {
 	}
 }
 
+// parseTemplateName parses a name which may contain {{ref}} template parts.
+// Examples: "correctness", "{{target}}-draft", "{{target}}-refine-1"
+// Stops at :, ->, newline, or other structural tokens.
+func (p *Parser) parseTemplateName() string {
+	var parts []string
+	for !p.atEnd() && !p.check(TokenColon) && !p.check(TokenArrow) &&
+		!p.check(TokenNewline) && !p.check(TokenEOF) {
+		if p.check(TokenIdent) {
+			parts = append(parts, p.current().Value)
+			p.advance()
+		} else if p.check(TokenDoubleLBrace) {
+			p.advance()
+			ref := p.expectIdent()
+			p.expect(TokenDoubleRBrace)
+			parts = append(parts, "{{"+ref+"}}")
+		} else if p.check(TokenDash) {
+			parts = append(parts, "-")
+			p.advance()
+		} else if p.check(TokenNumber) {
+			parts = append(parts, p.current().Value)
+			p.advance()
+		} else {
+			break
+		}
+	}
+	if len(parts) == 0 {
+		p.addError("expected name, got %s (%q)", p.current().Type, p.current().Value)
+		return ""
+	}
+	return strings.Join(parts, "")
+}
+
+// checkParamAssign peeks ahead to see if this is param.X = value
+func (p *Parser) checkParamAssign() bool {
+	// Current is "param", check if next tokens are . ident =
+	if p.pos+3 >= len(p.tokens) {
+		return false
+	}
+	return p.tokens[p.pos+1].Type == TokenDot &&
+		p.tokens[p.pos+2].Type == TokenIdent &&
+		p.tokens[p.pos+3].Type == TokenEquals
+}
+
+func (p *Parser) parseParamAssign() *ParamAssign {
+	pos := p.currentPos()
+	p.advance() // consume "param"
+	p.expect(TokenDot)
+	name := p.expectIdent()
+	p.expect(TokenEquals)
+	val := p.parseValue()
+	return &ParamAssign{Name: name, Value: val, Pos: pos}
+}
+
 func (p *Parser) parseRefDecl() *RefDecl {
 	pos := p.currentPos()
 	p.expect(TokenDash) // -
 
-	name := p.expectIdent()
+	name := p.parseTemplateName()
 	ref := &RefDecl{Name: name, Pos: pos}
 
 	// Optional .field or .*
@@ -767,6 +827,16 @@ func (p *Parser) parseReduceCell() *ReduceCell {
 	if p.check(TokenDoubleLBrace) {
 		p.advance()
 		overRef = p.expectIdent()
+		if p.check(TokenDot) {
+			p.advance()
+			if p.check(TokenIdent) {
+				overRef += "." + p.current().Value
+				p.advance()
+			} else {
+				// .* wildcard
+				overRef += ".*"
+			}
+		}
 		p.expect(TokenDoubleRBrace)
 	} else {
 		overRef = p.expectIdent()
@@ -902,7 +972,7 @@ func (p *Parser) parsePromptFragment() *PromptFragment {
 
 	frag := &PromptFragment{
 		Name:  name,
-		Lines: p.collectPromptLines(),
+		Lines: p.collectPromptLinesTopLevel(),
 		Pos:   pos,
 	}
 
@@ -971,19 +1041,19 @@ func (p *Parser) parseOperation() *Operation {
 
 	case TokenOpDrop:
 		op.Kind = "drop"
-		op.Target = p.expectIdent()
+		op.Target = p.parseTemplateName()
 
 	case TokenOpWire:
 		op.Kind = "wire"
-		op.From = p.expectIdent()
+		op.From = p.parseTemplateName()
 		p.expect(TokenArrow)
-		op.To = p.expectIdent()
+		op.To = p.parseTemplateName()
 
 	case TokenOpCut:
 		op.Kind = "cut"
-		op.From = p.expectIdent()
+		op.From = p.parseTemplateName()
 		p.expect(TokenArrow)
-		op.To = p.expectIdent()
+		op.To = p.parseTemplateName()
 
 	case TokenOpSplit:
 		op.Kind = "split"
@@ -1238,11 +1308,22 @@ func (p *Parser) parseValue() Value {
 }
 
 // collectPromptLines collects indented text lines until a structural token is found.
+// inCell: true when collecting inside a cell body (## is just markdown, not structural)
 func (p *Parser) collectPromptLines() []string {
+	return p.collectPromptLinesInner(true)
+}
+
+// collectPromptLinesTopLevel collects prompt lines at top level (## IS structural).
+func (p *Parser) collectPromptLinesTopLevel() []string {
+	return p.collectPromptLinesInner(false)
+}
+
+func (p *Parser) collectPromptLinesInner(inCell bool) []string {
 	var lines []string
 	for !p.atEnd() {
 		// Stop at structural tokens
-		if p.check(TokenHash) || p.check(TokenHashSlash) || p.check(TokenDoubleHash) ||
+		if p.check(TokenHash) || p.check(TokenHashSlash) ||
+			(!inCell && p.check(TokenDoubleHash)) ||
 			p.check(TokenDoubleHashSlash) || p.check(TokenCodeFence) ||
 			p.checkSectionTag() || p.check(TokenDash) || p.check(TokenAt) ||
 			p.check(TokenVars) || p.check(TokenEOF) ||
@@ -1265,14 +1346,12 @@ func (p *Parser) collectPromptLines() []string {
 			continue
 		}
 
-		// Accumulate remaining tokens as a line of text
+		// Accumulate remaining tokens as a line of text.
+		// Within a line, only code fence and section tags are structural breaks.
+		// #/ and ## mid-line are just prompt text (e.g., "delimiters (#/ closers, ## boundaries)")
 		var lineTokens []string
 		for !p.atEnd() && !p.check(TokenNewline) && !p.check(TokenEOF) {
-			// Stop at structural tokens on same line
-			if p.check(TokenHash) || p.check(TokenHashSlash) || p.check(TokenDoubleHash) ||
-				p.check(TokenDoubleHashSlash) || p.check(TokenCodeFence) ||
-				p.checkSectionTag() || p.check(TokenVars) ||
-				p.checkSequence(TokenMeta, TokenHashSlash) {
+			if p.check(TokenCodeFence) || p.checkSectionTag() {
 				break
 			}
 			lineTokens = append(lineTokens, p.current().Value)
@@ -1330,7 +1409,8 @@ func (p *Parser) checkSectionTag() bool {
 	tt := p.current().Type
 	return tt == TokenSystem || tt == TokenContext || tt == TokenUser ||
 		tt == TokenThink || tt == TokenExamples || tt == TokenFormat ||
-		tt == TokenAccept || tt == TokenEach || tt == TokenSquash
+		tt == TokenAccept || tt == TokenEach || tt == TokenSquash ||
+		tt == TokenDistill
 }
 
 func (p *Parser) checkBangOp() bool {

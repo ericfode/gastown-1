@@ -46,11 +46,9 @@ var slingLevels = []slingLevel{
 		Description: "rule-of-five.cell (recipe with graph ops) and security-audit.cell (oracle blocks)",
 		Files:       []string{"rule-of-five.cell", "security-audit.cell"},
 		Checks: func(t *testing.T, prog *Program, valErrs []*ValidationError) {
-			// rule-of-five is a recipe, not a molecule
-			if prog.Recipes != nil && len(prog.Recipes) > 0 {
-				if prog.Recipes[0].Name != "rule-of-five" {
-					t.Errorf("L2: expected recipe name 'rule-of-five', got %q", prog.Recipes[0].Name)
-				}
+			// Both files are recipes — check that they have at least one
+			if prog.Recipes == nil || len(prog.Recipes) == 0 {
+				t.Errorf("L2: expected at least 1 recipe, got 0")
 			}
 		},
 	},

@@ -28,16 +28,24 @@ type Molecule struct {
 
 // Cell is a # name : type ... #/ construct.
 type Cell struct {
-	Name       string
-	Type       CellType
-	IsMeta     bool
-	Refs       []*RefDecl
+	Name        string
+	Type        CellType
+	IsMeta      bool
+	Refs        []*RefDecl
 	Annotations []*Annotation
-	Prompts    []*PromptSection
-	Oracle     *OracleBlock
+	Prompts     []*PromptSection
+	Oracle      *OracleBlock
 	AcceptBlock *AcceptBlock
-	VarsBlock  *VarsBlock
-	Pos        Position
+	VarsBlock   *VarsBlock
+	ParamAssigns []*ParamAssign // param.X = value assignments (for mol() cells)
+	Pos         Position
+}
+
+// ParamAssign is a param.name = value assignment inside a mol() cell body.
+type ParamAssign struct {
+	Name  string
+	Value Value
+	Pos   Position
 }
 
 // CellType represents the type of a cell.

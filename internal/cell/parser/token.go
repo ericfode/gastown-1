@@ -99,6 +99,7 @@ const (
 	TokenEach     // each>
 	TokenVars     // vars>
 	TokenSquash   // squash>
+	TokenDistill  // distill>
 
 	// Oracle keywords
 	TokenJsonParse    // json_parse

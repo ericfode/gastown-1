@@ -75,6 +75,7 @@ var sectionTags = map[string]TokenType{
 	"each":     TokenEach,
 	"vars":     TokenVars,
 	"squash":   TokenSquash,
+	"distill":  TokenDistill,
 }
 
 // Lex tokenizes the input source code.
@@ -469,7 +470,7 @@ func (l *Lexer) lexPromptContent() error {
 		// Check for structural tokens that end prompt mode
 		isStructural := false
 
-		// ##/ or ##
+		// ##/ or ## (molecule delimiters)
 		if ch == '#' && l.peek(1) == '#' {
 			isStructural = true
 		}
@@ -664,7 +665,8 @@ func (l *Lexer) lexIdentOrKeyword() {
 			// Enter prompt mode for tags with free-text content
 			// (NOT each>, format>, vars>, squash> which have structured syntax)
 			if word == "system" || word == "context" || word == "user" ||
-				word == "think" || word == "examples" || word == "accept" {
+				word == "think" || word == "examples" || word == "accept" ||
+				word == "distill" {
 				l.inPrompt = true
 			}
 			return
