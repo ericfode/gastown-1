@@ -1,0 +1,107 @@
+-- Dog Reaper: Reap stale wisps, purge old data, auto-close stale issues.
+-- All script cells calling gt reaper commands.
+
+## dog-reaper {
+  input param.max_age          : str default("24h")
+  input param.purge_age        : str default("168h")
+  input param.stale_issue_age  : str default("720h")
+  input param.mail_delete_age  : str default("168h")
+  input param.alert_threshold  : str default("500")
+  input param.dry_run          : str default("")
+  input param.databases        : str default("")
+  input param.dolt_port        : str default("3307")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # scan : script
+    @retry(max: 2)
+    user>
+      Scan databases for reaper candidates.
+    ```bash
+    echo "--- Discovering databases ---"
+    if [ -n "{{param.databases}}" ]; then
+      DBS="{{param.databases}}"
+    else
+      DBS=$(gt reaper databases --json | jq -r '.[]')
+    fi
+
+    echo "--- Scanning each database ---"
+    for db in $DBS; do
+      gt reaper scan --db="$db" --port={{param.dolt_port}} \
+        --max-age={{param.max_age}} --purge-age={{param.purge_age}} \
+        --mail-age={{param.mail_delete_age}} --stale-age={{param.stale_issue_age}} \
+        --json
+    done
+    ```
+  #/
+
+  # reap : script
+    - scan
+    user>
+      Reap stale wisps past max_age with closed/missing parents.
+    ```bash
+    DBS=$(gt reaper databases --json | jq -r '.[]')
+    DRY_RUN_FLAG=""
+    [ -n "{{param.dry_run}}" ] && DRY_RUN_FLAG="--dry-run"
+
+    for db in $DBS; do
+      gt reaper reap --db="$db" --port={{param.dolt_port}} \
+        --max-age={{param.max_age}} $DRY_RUN_FLAG --json
+    done
+    ```
+  #/
+
+  # purge : script
+    - reap
+    user>
+      Purge old closed wisps and mail past retention.
+    ```bash
+    DBS=$(gt reaper databases --json | jq -r '.[]')
+    DRY_RUN_FLAG=""
+    [ -n "{{param.dry_run}}" ] && DRY_RUN_FLAG="--dry-run"
+
+    for db in $DBS; do
+      gt reaper purge --db="$db" --port={{param.dolt_port}} \
+        --purge-age={{param.purge_age}} --mail-age={{param.mail_delete_age}} \
+        $DRY_RUN_FLAG --json
+    done
+    ```
+  #/
+
+  # auto-close : script
+    - purge
+    user>
+      Auto-close stale issues (excludes P0/P1, epics, active deps).
+    ```bash
+    DBS=$(gt reaper databases --json | jq -r '.[]')
+    DRY_RUN_FLAG=""
+    [ -n "{{param.dry_run}}" ] && DRY_RUN_FLAG="--dry-run"
+
+    for db in $DBS; do
+      gt reaper auto-close --db="$db" --port={{param.dolt_port}} \
+        --stale-age={{param.stale_issue_age}} $DRY_RUN_FLAG --json
+    done
+    ```
+  #/
+
+  # report : script
+    - auto-close
+    user>
+      Generate summary report, escalate anomalies, signal completion.
+    ```bash
+    echo "## Reaper Dog Report"
+    echo "Scan: {{scan}}"
+    echo "Reap: {{reap}}"
+    echo "Purge: {{purge}}"
+    echo "Auto-close: {{auto-close}}"
+
+    gt mail send deacon/ -s "DOG_DONE: reaper" -m "Task: dog-reaper
+    Status: COMPLETE"
+    ```
+  #/
+
+  scan -> reap -> purge -> auto-close -> report
+##/

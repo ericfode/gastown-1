@@ -1,0 +1,108 @@
+-- Session GC: Clean stale sessions and garbage collect runtime state.
+-- Mix of script cells and one decision cell for mode selection.
+
+## session-gc {
+  input param.mode : str default("conservative")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # determine-mode : decision
+    user>
+      Establish GC aggressiveness from input mode.
+      Mode "conservative": only clearly dead state (tmux with no procs,
+      orphan Claude procs, wisps > 24h).
+      Mode "aggressive": adds wisps > 1h, orphan branches, state files > 7d.
+    format> json
+      { "mode": "conservative" | "aggressive",
+        "targets": [str] }
+  #/
+
+  # preview-cleanup : script
+    - determine-mode
+    user>
+      Preview what will be cleaned without removing anything.
+    ```bash
+    echo "--- Doctor preview ---"
+    gt doctor -v
+
+    if [ "{{determine-mode}}" = *aggressive* ]; then
+      echo "--- Aggressive: old branches ---"
+      git branch --list 'polecat/*' 2>/dev/null
+      echo "--- Aggressive: old state files ---"
+      find "$(gt root)" -path "*/.runtime/*.json" -mtime +7 2>/dev/null
+    fi
+    ```
+  #/
+
+  # execute-gc : script
+    - preview-cleanup
+    user>
+      Execute garbage collection based on determined mode.
+    ```bash
+    echo "--- Running gt doctor --fix ---"
+    gt doctor --fix
+
+    if [ "{{determine-mode}}" = *aggressive* ]; then
+      echo "--- Aggressive cleanup ---"
+      for branch in $(git branch --list 'polecat/*' 2>/dev/null); do
+        LAST=$(git log -1 --format=%ct "$branch" 2>/dev/null || echo 0)
+        NOW=$(date +%s)
+        AGE=$(( (NOW - LAST) / 86400 ))
+        if [ "$AGE" -gt 7 ]; then
+          echo "Deleting old branch: $branch (${AGE}d old)"
+          git branch -D "$branch"
+        fi
+      done
+    fi
+    ```
+  #/
+
+  # verify-cleanup : script
+    - execute-gc
+    user>
+      Confirm garbage was actually removed.
+    ```bash
+    echo "--- Post-GC doctor check ---"
+    gt doctor -v
+    echo "--- Remaining sessions ---"
+    tmux list-sessions 2>/dev/null || echo "no tmux sessions"
+    echo "--- Remaining Claude procs ---"
+    pgrep -f claude || echo "no Claude processes"
+    ```
+  #/
+
+  # report-gc : script
+    - verify-cleanup
+    user>
+      Generate GC summary report and send to Deacon.
+    ```bash
+    REPORT="Session GC Report: $(date -Iseconds)
+    Mode: {{param.mode}}
+    Preview: {{preview-cleanup}}
+    Execution: {{execute-gc}}
+    Verification: {{verify-cleanup}}"
+
+    echo "$REPORT"
+
+    gt mail send deacon/ -s "GC complete" -m "$REPORT"
+    ```
+  #/
+
+  # return-to-kennel : script
+    - report-gc
+    user>
+      Signal completion and return dog to available pool.
+    ```bash
+    gt mail send deacon/ -s "DOG_DONE: session-gc" -m "Task: session-gc
+    Mode: {{param.mode}}
+    Status: COMPLETE
+    Ready for next assignment."
+    ```
+  #/
+
+  determine-mode -> preview-cleanup -> execute-gc -> verify-cleanup
+  verify-cleanup -> report-gc -> return-to-kennel
+##/

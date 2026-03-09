@@ -1,0 +1,84 @@
+-- Dog Doctor: Probe Dolt server health and inspect resource conditions.
+-- All script cells (pure infrastructure, read-only checks).
+
+## dog-doctor {
+  input param.port              : str default("3307")
+  input param.latency_threshold : str default("1s")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # probe : script
+    user>
+      Check Dolt server connectivity and measure latency.
+    ```bash
+    echo "--- Connectivity check ---"
+    dolt sql -q "SELECT active_branch()" --port {{param.port}} \
+      || { gt escalate -s CRITICAL "Dolt: server unreachable on port {{param.port}}"; exit 1; }
+
+    echo "--- Latency check ---"
+    START=$(date +%s%N)
+    dolt sql -q "SELECT active_branch()" --port {{param.port}}
+    END=$(date +%s%N)
+    LATENCY=$(( (END - START) / 1000000 ))
+    echo "latency_ms=$LATENCY"
+
+    THRESHOLD_MS=$(echo "{{param.latency_threshold}}" | sed 's/s/000/' | sed 's/ms//')
+    if [ "$LATENCY" -gt "$THRESHOLD_MS" ]; then
+      echo "WARNING: latency ${LATENCY}ms exceeds threshold {{param.latency_threshold}}"
+    fi
+    ```
+  #/
+
+  # inspect : script
+    - probe
+    user>
+      Inspect resource conditions: connections, disk, orphans, backups.
+    ```bash
+    echo "--- Connection count ---"
+    dolt sql -q "SELECT COUNT(*) AS conn_count FROM information_schema.PROCESSLIST;" \
+      --port {{param.port}}
+
+    echo "--- Disk usage (.dolt-data/) ---"
+    du -sh ~/gt/.dolt-data/ 2>/dev/null || echo "data dir not found"
+
+    echo "--- Daemon directory disk usage ---"
+    du -sh "$(gt root)/daemon/" 2>/dev/null || echo "daemon dir not found"
+
+    echo "--- Orphan database detection ---"
+    dolt sql -q "SHOW DATABASES;" --port {{param.port}} \
+      | grep -E '^(testdb_|beads_t|beads_pt|doctest_)' \
+      | tee /tmp/orphan_dbs.txt
+    ORPHAN_COUNT=$(wc -l < /tmp/orphan_dbs.txt)
+    echo "orphan_count=$ORPHAN_COUNT"
+    if [ "$ORPHAN_COUNT" -gt 0 ]; then
+      echo "WARNING: $ORPHAN_COUNT orphan databases detected. Run: gt dolt cleanup"
+    fi
+
+    echo "--- Backup freshness ---"
+    gt dolt status --json 2>/dev/null | jq '.backups // "no backup info"'
+    ```
+  #/
+
+  # report : script
+    - inspect
+    user>
+      Generate health report and send findings to Deacon.
+    ```bash
+    echo "--- Generating Doctor Dog Report ---"
+    REPORT="Doctor Dog Report: $(date -Iseconds)
+    Probe: {{probe}}
+    Inspect: {{inspect}}"
+
+    echo "$REPORT"
+
+    gt mail send deacon/ -s "DOG_DONE: doctor" -m "Task: dolt-doctor
+    Status: COMPLETE
+    $(echo "$REPORT" | head -20)"
+    ```
+  #/
+
+  probe -> inspect -> report
+##/

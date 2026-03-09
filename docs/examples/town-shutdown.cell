@@ -1,0 +1,98 @@
+-- Town Shutdown: Full Gas Town shutdown and restart sequence.
+-- All script cells. Idempotent — preserves polecat sandboxes.
+
+## town-shutdown {
+  input param.shutdown_reason : str required
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # preflight : script
+    user>
+      Check for blockers before shutdown.
+    ```bash
+    gt shutdown preflight
+    ```
+    accept>
+      No blockers found (active merges, etc). Warnings acceptable.
+  #/
+
+  # stop-sessions : script
+    - preflight
+    user>
+      Kill Claude sessions but preserve polecat sandboxes.
+    ```bash
+    gt stop --all --preserve-sandbox
+    gt polecats --all --status
+    ```
+  #/
+
+  # clear-inboxes : script
+    - stop-sessions
+    user>
+      Archive and clear all agent inboxes.
+    ```bash
+    for rig in $(gt rigs --names); do
+      gt mail clear "$rig/witness" --archive
+      gt mail clear "$rig/refinery" --archive
+    done
+    gt mail clear mayor --archive
+    ```
+  #/
+
+  # stop-daemon : script
+    - clear-inboxes
+    user>
+      Stop the Gas Town daemon gracefully.
+    ```bash
+    gt daemon stop
+    ```
+  #/
+
+  # rotate-logs : script
+    - stop-daemon
+    user>
+      Rotate logs and clean up old session captures.
+    ```bash
+    gt daemon rotate-logs
+    gt doctor --fix
+    ```
+  #/
+
+  # sync-state : script
+    - rotate-logs
+    user>
+      Sync beads state to Dolt.
+    ```bash
+    bd sync
+    ```
+  #/
+
+  # handoff-mayor : script
+    - sync-state
+    user>
+      Record shutdown context for the fresh Mayor session.
+    ```bash
+    gt mail send mayor -s "HANDOFF: Town shutdown complete" -m "Town shutdown completed.
+    Polecat sandboxes: PRESERVED
+    Inboxes: ARCHIVED and cleared
+    Daemon: STOPPED
+    Shutdown reason: {{param.shutdown_reason}}
+    Next: gt daemon start && gt prime && gt status"
+    ```
+  #/
+
+  # restart-daemon : script
+    - handoff-mayor
+    user>
+      Start the daemon with fresh state.
+    ```bash
+    gt daemon start
+    ```
+  #/
+
+  preflight -> stop-sessions -> clear-inboxes -> stop-daemon
+  stop-daemon -> rotate-logs -> sync-state -> handoff-mayor -> restart-daemon
+##/
