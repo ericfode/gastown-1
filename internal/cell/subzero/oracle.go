@@ -184,25 +184,55 @@ func evalInExpr(expr string, parsed interface{}) error {
 }
 
 func evalLenExpr(expr string, parsed interface{}) error {
-	// len(output.X) > 0
-	// Extract field path from len(...)
+	// len(output.X) >= N, len(output.X) > N
 	start := strings.Index(expr, "(")
 	end := strings.Index(expr, ")")
 	if start < 0 || end < 0 {
 		return nil
 	}
 	fieldPath := expr[start+1 : end]
-	val := resolveField(fieldPath, parsed)
 
-	// Extract comparison
-	rest := strings.TrimSpace(expr[end+1:])
-	if strings.HasPrefix(rest, "> 0") || strings.HasPrefix(rest, ">0") {
-		if len(val) == 0 {
-			return fmt.Errorf("len(%s) == 0, expected > 0", fieldPath)
+	// Get the actual length: for arrays, count elements; for strings, count chars
+	length := 0
+	valStr := resolveField(fieldPath, parsed)
+	if valStr == "" {
+		length = 0
+	} else if valStr[0] == '[' {
+		// Try parsing as JSON array
+		var arr []interface{}
+		if err := json.Unmarshal([]byte(valStr), &arr); err == nil {
+			length = len(arr)
+		} else {
+			length = len(valStr)
 		}
+	} else {
+		length = len(valStr)
+	}
+
+	// Extract comparison: >= N, > N
+	rest := strings.TrimSpace(expr[end+1:])
+	var op string
+	var threshold float64
+	if strings.HasPrefix(rest, ">=") {
+		op = ">="
+		fmt.Sscanf(strings.TrimSpace(rest[2:]), "%f", &threshold)
+	} else if strings.HasPrefix(rest, ">") {
+		op = ">"
+		fmt.Sscanf(strings.TrimSpace(rest[1:]), "%f", &threshold)
+	} else {
 		return nil
 	}
 
+	switch op {
+	case ">=":
+		if float64(length) < threshold {
+			return fmt.Errorf("len(%s)=%d < %g", fieldPath, length, threshold)
+		}
+	case ">":
+		if float64(length) <= threshold {
+			return fmt.Errorf("len(%s)=%d <= %g", fieldPath, length, threshold)
+		}
+	}
 	return nil
 }
 
@@ -267,12 +297,50 @@ func evalContainsExpr(expr string, output string, parsed interface{}) error {
 func evalCondition(expr string, output string, parsed interface{}) (bool, error) {
 	expr = strings.TrimSpace(expr)
 
+	// "A and B" — both must be true
+	if strings.Contains(expr, " and ") {
+		parts := strings.Split(expr, " and ")
+		for _, part := range parts {
+			match, err := evalCondition(strings.TrimSpace(part), output, parsed)
+			if err != nil || !match {
+				return false, err
+			}
+		}
+		return true, nil
+	}
+
+	// "A or B" — any must be true
+	if strings.Contains(expr, " or ") {
+		parts := strings.Split(expr, " or ")
+		for _, part := range parts {
+			match, err := evalCondition(strings.TrimSpace(part), output, parsed)
+			if err != nil {
+				return false, err
+			}
+			if match {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
 	// "output.X == Y"
 	if strings.Contains(expr, " == ") {
 		parts := strings.SplitN(expr, " == ", 2)
 		left := resolveField(strings.TrimSpace(parts[0]), parsed)
 		right := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
 		return left == right, nil
+	}
+
+	// "output.X contains Y"
+	if strings.Contains(expr, " contains ") {
+		parts := strings.SplitN(expr, " contains ", 2)
+		haystack := resolveField(strings.TrimSpace(parts[0]), parsed)
+		if haystack == "" {
+			haystack = output
+		}
+		needle := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+		return strings.Contains(haystack, needle), nil
 	}
 
 	return false, nil
