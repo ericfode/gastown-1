@@ -210,11 +210,18 @@ func (r *resolver) applyRecipes(prog *Program) {
 				continue
 			}
 
+			// Determine target args. If there's a where clause, filter
+			// cells by selector and use matching names as args.
+			args := apply.Args
+			if apply.Selector != nil && len(rec.Params) == 1 && len(args) == 0 {
+				args = FilterCellsBySelector(mol, apply.Selector)
+			}
+
 			// If recipe has 1 param but apply has N args, apply once per arg.
-			argSets := [][]string{apply.Args}
-			if len(rec.Params) == 1 && len(apply.Args) > 1 {
-				argSets = make([][]string, len(apply.Args))
-				for i, arg := range apply.Args {
+			argSets := [][]string{args}
+			if len(rec.Params) == 1 && len(args) > 1 {
+				argSets = make([][]string, len(args))
+				for i, arg := range args {
 					argSets[i] = []string{arg}
 				}
 			}

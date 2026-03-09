@@ -1271,6 +1271,10 @@ func (p *Parser) parseSelectorPred() *SelectorPred {
 		op = "<="
 	case p.check(TokenGTEq):
 		op = ">="
+	case p.check(TokenMatches):
+		op = "matches"
+	case p.check(TokenContains):
+		op = "contains"
 	default:
 		p.addError("expected comparison operator in selector, got: %s", p.current().Value)
 	}

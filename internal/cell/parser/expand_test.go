@@ -243,6 +243,119 @@ func TestApplyRecipeSecurityAudit(t *testing.T) {
 	}
 }
 
+func TestGlobMatch(t *testing.T) {
+	tests := []struct {
+		pattern string
+		s       string
+		want    bool
+	}{
+		{"impl*", "implement", true},
+		{"impl*", "implementation", true},
+		{"impl*", "deploy", false},
+		{"*scan", "prescan", true},
+		{"*scan", "postscan", true},
+		{"*scan", "scanner", false},
+		{"*-step-*", "build-step-1", true},
+		{"*-step-*", "deploy", false},
+		{"exact", "exact", true},
+		{"exact", "notexact", false},
+		{"*", "anything", true},
+		{"pre*scan", "prescan", true},
+		{"pre*scan", "pre-security-scan", true},
+	}
+	for _, tt := range tests {
+		got := globMatch(tt.pattern, tt.s)
+		if got != tt.want {
+			t.Errorf("globMatch(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+		}
+	}
+}
+
+func TestSelectorMatchType(t *testing.T) {
+	cell := &Cell{Name: "deploy", Type: CellType{Name: "script"}}
+	sel := &SelectorExpr{Predicates: []*SelectorPred{
+		{Field: "type", Op: "==", Value: "script"},
+	}}
+	if !MatchSelector(sel, cell) {
+		t.Error("expected match for type == script")
+	}
+
+	sel2 := &SelectorExpr{Predicates: []*SelectorPred{
+		{Field: "type", Op: "==", Value: "llm"},
+	}}
+	if MatchSelector(sel2, cell) {
+		t.Error("expected no match for type == llm")
+	}
+}
+
+func TestSelectorMatchGlob(t *testing.T) {
+	cell := &Cell{Name: "implement-feature", Type: CellType{Name: "llm"}}
+	sel := &SelectorExpr{Predicates: []*SelectorPred{
+		{Field: "name", Op: "matches", Value: "impl*"},
+	}}
+	if !MatchSelector(sel, cell) {
+		t.Error("expected glob match for impl*")
+	}
+}
+
+func TestSelectorContains(t *testing.T) {
+	cell := &Cell{Name: "security-review", Type: CellType{Name: "llm"}}
+	sel := &SelectorExpr{Predicates: []*SelectorPred{
+		{Field: "name", Op: "contains", Value: "review"},
+	}}
+	if !MatchSelector(sel, cell) {
+		t.Error("expected contains match for review")
+	}
+}
+
+func TestApplyWithWhereSelector(t *testing.T) {
+	src := `recipe add-gate(target) {
+  !add # {{target}}-gate : human
+    user>
+      Approve {{target}}?
+  #/
+  !wire {{target}}-gate -> {{target}}
+}
+
+## pipeline
+  # analyze : llm
+    user>
+      Analyze.
+  #/
+  # deploy : script
+` + "```bash\n    echo deploying\n```" + `
+  #/
+  # report : text
+    user>
+      Report.
+  #/
+  analyze -> deploy -> report
+  apply add-gate(deploy) where type == script
+##/`
+
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	result := Resolve(prog, ResolveOptions{BaseDir: t.TempDir()})
+	if len(result.Errors) > 0 {
+		for _, e := range result.Errors {
+			t.Errorf("resolve error: %v", e)
+		}
+		t.FailNow()
+	}
+
+	mol := result.Program.Molecules[0]
+	cellNames := make(map[string]bool)
+	for _, c := range mol.Cells {
+		cellNames[c.Name] = true
+	}
+	if !cellNames["deploy-gate"] {
+		t.Error("missing deploy-gate after apply with where")
+	}
+}
+
 func writeTestCell(t *testing.T, dir, name, content string) {
 	t.Helper()
 	err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644)

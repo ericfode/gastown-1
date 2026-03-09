@@ -148,6 +148,88 @@ func expandValue(v Value, subs map[string]string) Value {
 	}
 }
 
+// MatchSelector evaluates a selector expression against a cell.
+// Returns true if the cell matches all predicates.
+func MatchSelector(sel *SelectorExpr, cell *Cell) bool {
+	if sel == nil {
+		return true
+	}
+	for _, pred := range sel.Predicates {
+		if !matchPred(pred, cell) {
+			return false
+		}
+	}
+	return true
+}
+
+func matchPred(pred *SelectorPred, cell *Cell) bool {
+	fieldVal := ""
+	switch pred.Field {
+	case "type":
+		fieldVal = cell.Type.Name
+	case "name":
+		fieldVal = cell.Name
+	default:
+		return false
+	}
+
+	switch pred.Op {
+	case "==":
+		return fieldVal == pred.Value
+	case "!=":
+		return fieldVal != pred.Value
+	case "matches":
+		return globMatch(pred.Value, fieldVal)
+	case "contains":
+		return strings.Contains(fieldVal, pred.Value)
+	default:
+		return false
+	}
+}
+
+// globMatch implements simple glob matching (* matches any sequence).
+func globMatch(pattern, s string) bool {
+	// Simple glob: split on *, match segments in order.
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return s == pattern
+	}
+
+	// First part must be a prefix (unless pattern starts with *)
+	if parts[0] != "" && !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+
+	// Middle parts must appear in order
+	for i := 1; i < len(parts)-1; i++ {
+		idx := strings.Index(s, parts[i])
+		if idx < 0 {
+			return false
+		}
+		s = s[idx+len(parts[i]):]
+	}
+
+	// Last part must be a suffix (unless pattern ends with *)
+	last := parts[len(parts)-1]
+	if last != "" && !strings.HasSuffix(s, last) {
+		return false
+	}
+
+	return true
+}
+
+// FilterCellsBySelector returns cells from a molecule that match the selector.
+func FilterCellsBySelector(mol *Molecule, sel *SelectorExpr) []string {
+	var names []string
+	for _, c := range mol.Cells {
+		if MatchSelector(sel, c) {
+			names = append(names, c.Name)
+		}
+	}
+	return names
+}
+
 // ApplyRecipe executes an expanded recipe's graph operations against a molecule.
 // Operations: !add, !drop, !wire, !cut, !split, !merge, !refine, !seed.
 func ApplyRecipe(mol *Molecule, recipe *Recipe) error {
