@@ -1,0 +1,140 @@
+-- Design Convoy — 6 parallel analysis legs + synthesis.
+-- Translates design.formula.toml to Cell.
+
+## design
+
+  input param.problem : str required
+  input param.context : str default("")
+  input param.scope : str default("medium")
+
+  prompt@ design-base
+    You are a specialized design analyst in a convoy exploration.
+    Problem: {{param.problem}}
+    Scope: {{param.scope}}
+    Be thorough but actionable. Flag decisions needing human input.
+
+  -- === Parallel analysis legs (no deps between them) ===
+
+  # api : llm
+    @cost(max: 8000)
+    system>
+      {{@design-base}}
+      Your dimension: interface design and developer ergonomics.
+    user>
+      Analyze the interface design for this feature.
+      Explore CLI flags/subcommands, programmatic API, configuration,
+      error messages, naming conventions, discoverability.
+    format> analysis
+      { summary: str, options: [{ name: str, pros: [str], cons: [str] }],
+        recommendation: str, constraints: [str], open_questions: [str] }
+  #/
+
+  # data : llm
+    @cost(max: 8000)
+    system>
+      {{@design-base}}
+      Your dimension: data model, storage, and migrations.
+    user>
+      Analyze data model requirements. Explore data structures,
+      storage format, schema design, migration strategy, data lifecycle.
+    format> analysis
+      { summary: str, options: [{ name: str, pros: [str], cons: [str] }],
+        recommendation: str, constraints: [str], open_questions: [str] }
+  #/
+
+  # ux : llm
+    @cost(max: 8000)
+    system>
+      {{@design-base}}
+      Your dimension: user experience and CLI ergonomics.
+    user>
+      Analyze UX implications. Explore mental model, workflow integration,
+      learning curve, error experience, feedback, discoverability.
+    format> analysis
+      { summary: str, options: [{ name: str, pros: [str], cons: [str] }],
+        recommendation: str, constraints: [str], open_questions: [str] }
+  #/
+
+  # scale : llm
+    @cost(max: 8000)
+    system>
+      {{@design-base}}
+      Your dimension: performance at scale, bottlenecks, limits.
+    user>
+      Analyze scalability. Explore volume limits, latency budget,
+      concurrency, caching, graceful degradation, monitoring.
+    format> analysis
+      { summary: str, options: [{ name: str, pros: [str], cons: [str] }],
+        recommendation: str, constraints: [str], open_questions: [str] }
+  #/
+
+  # security : llm
+    @cost(max: 8000)
+    system>
+      {{@design-base}}
+      Your dimension: threat model, attack surface, trust boundaries.
+    user>
+      Analyze security. Explore trust boundaries, auth model,
+      input validation, secret management, audit trail, compliance.
+    format> analysis
+      { summary: str, options: [{ name: str, pros: [str], cons: [str] }],
+        recommendation: str, constraints: [str], open_questions: [str] }
+  #/
+
+  # integration : llm
+    @cost(max: 8000)
+    system>
+      {{@design-base}}
+      Your dimension: how it fits the existing system.
+    user>
+      Analyze integration. Explore compatibility, dependency impact,
+      deployment strategy, rollback plan, feature flags, testing.
+    format> analysis
+      { summary: str, options: [{ name: str, pros: [str], cons: [str] }],
+        recommendation: str, constraints: [str], open_questions: [str] }
+  #/
+
+  -- === Synthesis ===
+
+  # synthesis : llm
+    - api
+    - data
+    - ux
+    - scale
+    - security
+    - integration
+    @cost(max: 16000)
+    system>
+      You are a senior architect synthesizing a convoy design exploration.
+      Identify cross-cutting concerns. Present options with trade-offs.
+    user>
+      Synthesize these 6 dimension analyses into a unified design proposal:
+      each> leg in {{synthesis.*}}
+        ## {{leg}}
+
+      Structure:
+      1. Recommended approach (integrating all dimensions)
+      2. Key decisions (with options and trade-offs)
+      3. Cross-cutting concerns (things that affect multiple dimensions)
+      4. Implementation sequence (what to build first)
+      5. Open questions requiring human input
+    format> design_doc
+      {
+        recommended_approach: str,
+        key_decisions: [{ decision: str, options: [str], recommendation: str }],
+        cross_cutting: [str],
+        implementation_sequence: [str],
+        open_questions: [str]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["recommended_approach", "key_decisions"]);
+    assert len(output.recommended_approach) > 50;
+    assert len(output.key_decisions) >= 1;
+    ```
+  #/
+
+  squash> trigger: on_complete template: design include_metrics: true
+
+##/
