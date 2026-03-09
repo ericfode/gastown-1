@@ -521,6 +521,39 @@ func TestOracleForLoop(t *testing.T) {
 	}
 }
 
+// --- Wildcard ref tests ---
+
+func TestResolveRefsWildcard(t *testing.T) {
+	outputs := map[string]*CellResult{
+		"leg1": {Output: `{"findings":"bug1"}`, Fields: map[string]string{"findings": "bug1"}},
+		"leg2": {Output: `{"findings":"bug2"}`, Fields: map[string]string{"findings": "bug2"}},
+	}
+
+	// {{leg1.*}} → JSON object of all fields
+	got := ResolveRefs("Fields: {{leg1.*}}", outputs, nil)
+	if !strings.Contains(got, `"findings":"bug1"`) {
+		t.Errorf("wildcard should return JSON fields, got: %s", got)
+	}
+}
+
+func TestResolveRefsSelfGather(t *testing.T) {
+	// Self-ref gather: {{synthesis.*}} inside synthesis cell → array of dep outputs
+	outputs := map[string]*CellResult{
+		"leg1": {Output: "review-1"},
+		"leg2": {Output: "review-2"},
+	}
+	deps := []string{"leg1", "leg2"}
+
+	got := ResolveRefsWithContext("All: {{synthesis.*}}", outputs, nil, "synthesis", deps)
+	if !strings.Contains(got, "review-1") || !strings.Contains(got, "review-2") {
+		t.Errorf("self-ref gather should include all dep outputs, got: %s", got)
+	}
+	// Should be valid JSON array
+	if !strings.HasPrefix(strings.TrimPrefix(got, "All: "), "[") {
+		t.Errorf("self-ref gather should be JSON array, got: %s", got)
+	}
+}
+
 // --- Reduce loop tests ---
 
 func TestReduceBoundedLoop(t *testing.T) {

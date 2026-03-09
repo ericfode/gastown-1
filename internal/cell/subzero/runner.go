@@ -184,14 +184,14 @@ func (r *Runner) buildCellExec(info *cellInfo, outputs map[string]*CellResult) *
 
 	// Extract script body for script cells
 	if info.cell.ScriptBody != "" {
-		exec.Script = ResolveRefs(info.cell.ScriptBody, outputs, r.Params)
+		exec.Script = ResolveRefsWithContext(info.cell.ScriptBody, outputs, r.Params, info.name, info.refs)
 	}
 
 	// Assemble prompts with ref substitution
 	for _, ps := range info.cell.Prompts {
 		content := ""
 		for _, line := range ps.Lines {
-			resolved := ResolveRefs(line, outputs, r.Params)
+			resolved := ResolveRefsWithContext(line, outputs, r.Params, info.name, info.refs)
 			content += resolved + "\n"
 		}
 		exec.Prompts = append(exec.Prompts, PromptMsg{

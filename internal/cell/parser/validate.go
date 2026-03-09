@@ -114,6 +114,9 @@ func validateMolecule(mol *Molecule, prog *Program) []*ValidationError {
 					Severity: "error",
 					Pos:      ref.Pos,
 				})
+			} else if ref.Field == "*" && ref.Name == c.Name {
+				// Self-ref wildcard: {{self.*}} means "gather all dep outputs"
+				// This is valid — not a cycle. No warning needed.
 			} else if ref.Field != "" && ref.Field != "*" {
 				// Check field reference against format> spec
 				if fields, hasFormat := formatFields[refName]; hasFormat {
