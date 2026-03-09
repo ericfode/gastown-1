@@ -1,0 +1,207 @@
+-- Code Review Convoy — Cell translation of code-review.formula.toml
+-- A convoy-style review: parallel specialized legs + synthesis.
+
+## code-review
+
+  input param.pr : number required_unless(files, branch)
+  input param.files : str required_unless(pr, branch)
+  input param.branch : str required_unless(pr, files)
+
+  -- Reusable persona fragment
+  prompt@ reviewer-base
+    You are a specialized code reviewer in a convoy review.
+    Review target: {{param.pr}}
+    Use specific file:line references. Be actionable. Prioritize impact.
+
+  -- === Analysis legs (parallel, no deps between them) ===
+
+  # correctness : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 8000)
+    system>
+      {{@reviewer-base}}
+      Your focus: logical correctness and edge case handling.
+    user>
+      Review the code for logic errors, off-by-one, null handling,
+      race conditions, dead code, and incorrect assumptions.
+      What inputs could cause unexpected behavior?
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # performance : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 8000)
+    system>
+      {{@reviewer-base}}
+      Your focus: performance bottlenecks and efficiency.
+    user>
+      Review for O(n²) algorithms, unnecessary allocations, missing caching,
+      N+1 queries, blocking in async, memory leaks, unoptimized parsing.
+      What happens at 10x, 100x, 1000x scale?
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # security : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 8000)
+    system>
+      {{@reviewer-base}}
+      Your focus: security vulnerabilities and attack surface.
+    user>
+      Review for input validation gaps, auth bypasses, injection (SQL/XSS/cmd),
+      sensitive data exposure, hardcoded secrets, path traversal, SSRF, OWASP Top 10.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # elegance : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 8000)
+    system>
+      {{@reviewer-base}}
+      Your focus: design clarity and abstraction quality.
+    user>
+      Review for abstraction quality, naming, responsibility boundaries,
+      coupling, cohesion, and overall design clarity.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # resilience : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 8000)
+    system>
+      {{@reviewer-base}}
+      Your focus: error handling and failure modes.
+    user>
+      Review for error handling gaps, missing retries, cascading failures,
+      timeout handling, graceful degradation, and recovery paths.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # style : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 6000)
+    system>
+      {{@reviewer-base}}
+      Your focus: convention compliance and consistency.
+    user>
+      Review for naming conventions, formatting, import organization,
+      comment quality, and consistency with project style.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # smells : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 6000)
+    system>
+      {{@reviewer-base}}
+      Your focus: anti-patterns and technical debt.
+    user>
+      Review for code smells, god objects, feature envy, shotgun surgery,
+      primitive obsession, and other anti-patterns.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  -- === Verification legs ===
+
+  # wiring : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 6000)
+    system>
+      {{@reviewer-base}}
+      Your focus: installed-but-not-wired gaps.
+    user>
+      Check for dependencies added but not used, imports without references,
+      config added but not consumed, and dead integration points.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # commit-discipline : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 4000)
+    system>
+      {{@reviewer-base}}
+      Your focus: commit quality and atomicity.
+    user>
+      Review commit messages, atomicity, logical grouping,
+      and whether commits tell a coherent story.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  # test-quality : llm
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 6000)
+    system>
+      {{@reviewer-base}}
+      Your focus: test meaningfulness, not just coverage.
+    user>
+      Review for meaningful assertions, edge case coverage, test isolation,
+      flaky test risk, and missing test scenarios.
+    format> findings
+      { summary: str, critical: [str], major: [str], minor: [str] }
+  #/
+
+  -- === Synthesis (depends on all legs) ===
+
+  # synthesis : llm
+    - correctness
+    - performance
+    - security
+    - elegance
+    - resilience
+    - style
+    - smells
+    - wiring
+    - commit-discipline
+    - test-quality
+    @model(name: "claude-sonnet-4-6")
+    @cost(max: 12000)
+    system>
+      You are a senior reviewer synthesizing a convoy code review.
+      Deduplicate findings. Rank by severity. Be actionable.
+    context>
+      Review findings from 10 specialized reviewers:
+    user>
+      each> leg in {{synthesis.*}}
+        ## {{leg}}
+      Synthesize into a unified review. Group by severity:
+      P0 (must fix), P1 (should fix), P2 (nice to fix), observations.
+      Deduplicate across legs. Cite the originating reviewer.
+    format> review
+      {
+        verdict: "approve" | "request_changes" | "comment",
+        critical_count: number,
+        major_count: number,
+        summary: str,
+        critical: [{ issue: str, file: str, leg: str }],
+        major: [{ issue: str, file: str, leg: str }],
+        minor: [{ issue: str, file: str, leg: str }],
+        observations: [str]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["verdict", "critical_count", "summary"]);
+    assert output.verdict in ["approve", "request_changes", "comment"];
+    assert output.critical_count >= 0;
+    reject if output.summary == "";
+    ```
+  #/
+
+  -- Presets
+  preset gate { legs = ["wiring", "security", "smells", "test-quality"] }
+  preset full { legs = ["correctness", "performance", "security", "elegance",
+                         "resilience", "style", "smells", "wiring",
+                         "commit-discipline", "test-quality"] }
+
+  squash> trigger: on_complete template: review include_metrics: true
+
+##/

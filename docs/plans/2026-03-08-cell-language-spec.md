@@ -58,7 +58,7 @@ program       = { molecule | recipe | prompt_frag | oracle_decl | input_decl } ;
 molecule      = "##" IDENT "{" mol_body "##/" ;
 mol_body      = { cell | map_cell | reduce_cell | wire | preset
                 | input_decl | prompt_frag | oracle_decl
-                | import_decl | apply_stmt | COMMENT } ;
+                | import_decl | apply_stmt | squash_decl | COMMENT } ;
 
 import_decl   = "import" IDENT ;
 apply_stmt    = "apply" IDENT "(" ident_list ")" [ "where" selector_expr ] ;
@@ -85,6 +85,9 @@ reduce_cell   = "reduce" "#" IDENT ":" cell_type "over" REF "as" IDENT
 
 cell_body     = { ref_decl | annotation | prompt_section
                 | oracle_block | accept_block | vars_block } ;
+              (* Note: each> blocks may appear nested inside other prompt
+                 sections (e.g. inside user>). The parser treats each> as
+                 a sub-section that iterates within its parent section. *)
 
 cell_type     = "llm" | "script" | "oracle" | "decision" | "meta"
               | "distilled"
@@ -101,9 +104,10 @@ vars_block    = "vars>" { IDENT "=" value } ;
 annotation    = "@" IDENT "(" annot_args ")" ;
 annot_args    = IDENT ":" value { "," IDENT ":" value } ;
 
-prompt_section = section_header prompt_lines ;
+prompt_section = section_header prompt_content ;
 section_header = SECTION_TAG ">" [ "?" guard ] ;
 guard          = IDENT "(" IDENT { "," IDENT } ")" | IDENT ;
+prompt_content = { INDENT REST_OF_LINE | each_block } ;
 prompt_lines   = { INDENT REST_OF_LINE } ;
 
 oracle_block  = "```" "oracle" NEWLINE oracle_body "```" ;
@@ -167,6 +171,14 @@ input_decl    = "input" "param." IDENT ":" type_name
 input_modifier = "required"
                | "required_unless" "(" ident_list ")"
                | "default" "(" value ")" ;
+
+(* === Squash directive === *)
+
+squash_decl   = "squash>" { squash_field } ;
+squash_field  = IDENT ":" value ;
+              (* trigger: on_complete | on_all_complete | manual
+                 template: IDENT  — squash template name
+                 include_metrics: boolean *) ;
 
 (* === Typed holes (inline in prompt text) === *)
 
@@ -913,7 +925,7 @@ recipe rule-of-five(target) {
 (* Add to mol_body *)
 mol_body      = { cell | map_cell | reduce_cell | wire | preset
                 | input_decl | prompt_frag | oracle_decl
-                | import_decl | apply_stmt | COMMENT } ;
+                | import_decl | apply_stmt | squash_decl | COMMENT } ;
 
 import_decl   = "import" IDENT ;
 apply_stmt    = "apply" IDENT "(" ident_list ")" [ where_clause ] ;
