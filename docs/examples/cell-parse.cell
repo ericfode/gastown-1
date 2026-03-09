@@ -28,36 +28,49 @@
       You are a lexer for the Cell language. You break source code into
       tokens according to the Cell lexical specification.
 
-      Token types:
+      Token types (each token is one of these):
+
+      Structure tokens:
       - COMMENT: -- to end of line
       - MOL_OPEN: ## followed by IDENT
       - MOL_CLOSE: ##/
-      - CELL_OPEN: # followed by IDENT : cell_type
-      - CELL_CLOSE: #/
-      - META_CELL_OPEN: meta # followed by IDENT : cell_type
-      - META_CELL_CLOSE: meta #/
-      - MAP_PREFIX: map (before # or meta #)
-      - REDUCE_PREFIX: reduce (before # or meta #)
-      - SECTION_TAG: system> context> user> think> examples> format> accept> each>
-      - REF: {{ ... }}
-      - ANNOTATION: @ IDENT ( ... )
+      - CELL_OPEN: # followed by IDENT : cell_type (or map #, reduce #, meta #)
+      - CELL_CLOSE: #/ (or meta #/)
+      - REF_DECL: - IDENT (dependency reference)
+      - INPUT_DECL: input param.IDENT : type ...
+
+      Prompt tokens:
+      - SECTION_TAG: system> context> user> think> examples> each> accept>
+      - FORMAT_TAG: format> followed by IDENT (the format name)
+      - PROMPT_LINE: content line inside a prompt section
+
+      Block tokens (opaque content between delimiters):
       - ORACLE_OPEN: ```oracle
       - SCRIPT_OPEN: ```bash or ```python etc
-      - CODE_CLOSE: ```
+      - BODY_LINE: content line inside oracle or script block
+      - BLOCK_CLOSE: ``` (closes oracle or script)
+      - DISTILL_OPEN: distill>
       - SQUASH: squash> ...
-      - INPUT_DECL: input param.IDENT : type ...
+
+      Reference tokens:
+      - REF: {{ ... }} (interpolation reference)
+      - ANNOTATION: @ IDENT ( ... )
+
+      Graph tokens:
       - WIRE: IDENT -> IDENT
       - OPERATION: !add !drop !wire !cut !split !merge !refine !seed
-      - DISTILL_OPEN: distill>
-      - REF_DECL: - IDENT (dependency wire)
+
+      Literal tokens:
       - IDENT: identifier
       - STRING: "..."
       - NUMBER: digits
-      - INDENT: leading whitespace (significant in prompt lines)
-      - NEWLINE: line break
 
-      Preserve source positions (line:col) for each token.
-      Skip whitespace between tokens (except INDENT in prompt context).
+      Rules:
+      - format> is FORMAT_TAG (not SECTION_TAG) because it takes a name argument
+      - Lines inside ```oracle...``` and ```bash...``` blocks are BODY_LINE
+      - Lines inside system>/user>/context>/etc are PROMPT_LINE
+      - Preserve source positions (line:col) for each token
+      - Skip blank lines and pure-whitespace lines between tokens
     user>
       Lex this Cell source:
       {{param.source}}
@@ -81,16 +94,13 @@
       assert t.type in [
         "COMMENT", "MOL_OPEN", "MOL_CLOSE",
         "CELL_OPEN", "CELL_CLOSE",
-        "META_CELL_OPEN", "META_CELL_CLOSE",
-        "MAP_PREFIX", "REDUCE_PREFIX",
-        "SECTION_TAG", "REF", "ANNOTATION",
-        "ORACLE_OPEN", "SCRIPT_OPEN", "CODE_CLOSE",
-        "SQUASH", "INPUT_DECL", "WIRE", "OPERATION",
-        "DISTILL_OPEN", "REF_DECL",
-        "IDENT", "STRING", "NUMBER",
-        "INDENT", "NEWLINE",
-        "FORMAT_OPEN", "PRESET", "PROMPT_LINE",
-        "KEYWORD", "PUNCTUATION"
+        "SECTION_TAG", "FORMAT_TAG", "PROMPT_LINE",
+        "ORACLE_OPEN", "SCRIPT_OPEN", "BODY_LINE", "BLOCK_CLOSE",
+        "DISTILL_OPEN", "SQUASH",
+        "REF", "ANNOTATION",
+        "INPUT_DECL", "REF_DECL",
+        "WIRE", "OPERATION",
+        "IDENT", "STRING", "NUMBER"
       ];
     }
     ```
