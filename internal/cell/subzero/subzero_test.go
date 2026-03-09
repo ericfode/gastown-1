@@ -149,6 +149,69 @@ func TestDispatchExecutor(t *testing.T) {
 	}
 }
 
+func TestTextCellPassThrough(t *testing.T) {
+	d := &DispatchExecutor{
+		LLM:    &MockExecutor{},
+		Script: &ScriptExecutor{TimeoutSec: 5},
+	}
+
+	res, err := d.Execute(context.Background(), &CellExec{
+		Name: "checkpoint",
+		Type: "text",
+		Prompts: []PromptMsg{
+			{Role: "user", Content: "Step 3 complete. Moving to step 4."},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Output != "Step 3 complete. Moving to step 4." {
+		t.Errorf("text cell output = %q, want pass-through", res.Output)
+	}
+}
+
+func TestTextCellInRunner(t *testing.T) {
+	src := `## pipeline {
+  # step1 : llm
+    user>
+      Do step 1.
+  #/
+  # checkpoint : text
+    - step1
+    user>
+      Step 1 done. Result: {{step1}}
+  #/
+  step1 -> checkpoint
+##/`
+	prog, err := parser.Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &Runner{
+		Executor: &DispatchExecutor{
+			LLM:    &MockExecutor{},
+			Script: &ScriptExecutor{TimeoutSec: 5},
+		},
+	}
+	results, err := runner.Run(context.Background(), prog.Molecules[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cp := results["checkpoint"]
+	if cp == nil {
+		t.Fatal("checkpoint cell not executed")
+	}
+	// Text cell should have rendered user> content with ref interpolated
+	if cp.Output == "" {
+		t.Error("text cell produced empty output")
+	}
+	if !strings.Contains(cp.Output, "Step 1 done") {
+		t.Errorf("text cell output missing expected content: %q", cp.Output)
+	}
+}
+
 // --- Runner tests ---
 
 func TestRunInlineHelloCell(t *testing.T) {

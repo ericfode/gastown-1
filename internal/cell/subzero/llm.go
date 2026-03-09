@@ -50,8 +50,8 @@ type claudeResponse struct {
 }
 
 func (l *LLMExecutor) Execute(ctx context.Context, cell *CellExec) (*CellResult, error) {
-	if cell.Type != "llm" && cell.Type != "decision" && cell.Type != "text" {
-		return nil, fmt.Errorf("LLMExecutor only handles llm/decision/text cells, got %q", cell.Type)
+	if cell.Type != "llm" && cell.Type != "decision" {
+		return nil, fmt.Errorf("LLMExecutor only handles llm/decision cells, got %q", cell.Type)
 	}
 
 	apiKey := l.APIKey

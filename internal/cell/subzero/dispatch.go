@@ -15,11 +15,20 @@ type DispatchExecutor struct {
 
 func (d *DispatchExecutor) Execute(ctx context.Context, cell *CellExec) (*CellResult, error) {
 	switch cell.Type {
-	case "llm", "decision", "text":
+	case "llm", "decision":
 		if d.LLM == nil {
 			return nil, fmt.Errorf("no LLM executor configured")
 		}
 		return d.LLM.Execute(ctx, cell)
+
+	case "text":
+		// Text cells are pass-through: output is rendered prompt content.
+		// No LLM call, no script. Just concatenate prompt sections.
+		var out string
+		for _, p := range cell.Prompts {
+			out += p.Content
+		}
+		return &CellResult{Output: out, Fields: parseJSONFields(out)}, nil
 
 	case "script":
 		if d.Script == nil {
