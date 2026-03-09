@@ -1,4 +1,4 @@
--- CELL PARSE — The Parser That Distills Itself
+-- CELL READER — The Parser That Distills Itself
 --
 -- This is the second Cell program (after Cell Zero). It takes .cell
 -- source as input and produces a parse tree. The LLM does the parsing.
@@ -16,7 +16,7 @@
 -- Feed it every .cell file. Each file is a test case. Each consistent
 -- parse is a vote for that rule. Enough votes → frozen rule.
 
-## cell-parse
+## cell-reader
 
   input param.source : str required
   input param.filename : str default("")

@@ -1,0 +1,247 @@
+description = """
+Cell Forge — the bootstrap formula that converges on a Cell parser and runtime.
+
+This is the bridge between the TOML formula world and the Cell world.
+It works anywhere you have beads. No Gas Town infrastructure required.
+
+The Forge:
+1. Reads .cell source files (the corpus)
+2. Pours cell-reader against each file (LLM parses Cell source)
+3. Validates parse results against the Cell grammar oracle
+4. Runs cell-zero to observe execution patterns
+5. Distills consistent patterns into deterministic rules
+6. Repeats until convergence
+
+The output: a Cell parser and Cell runtime — distilled from their own execution.
+Each iteration is cheaper than the last. Stable patterns freeze.
+The formula replaces itself.
+
+Requires: bd (beads), LLM access, .cell corpus in docs/examples/
+"""
+formula = "cell-forge"
+version = 1
+
+[vars]
+corpus_dir = "docs/examples"
+spec_file = "docs/plans/2026-03-08-cell-language-spec.md"
+max_iterations = "10"
+convergence_threshold = "0.95"
+
+[[steps]]
+id = "inventory"
+title = "Inventory the Cell corpus"
+description = """
+Find all .cell files in the corpus directory.
+Count them. List them. This is the training data.
+
+```bash
+ls -1 {{corpus_dir}}/*.cell 2>/dev/null | wc -l
+ls -1 {{corpus_dir}}/*.cell 2>/dev/null
+```
+
+Create a bead to track this forge cycle:
+```bash
+bd create "Cell Forge cycle" --description="Converging on parser and runtime" -t task -p 1 --json
+```
+
+Output: list of .cell files and forge tracking bead ID.
+"""
+
+[[steps]]
+id = "read-spec"
+title = "Load the Cell language specification"
+needs = "inventory"
+description = """
+Read the Cell grammar spec. This is the oracle's source of truth.
+
+The spec defines:
+- Lexical structure (section 2)
+- Lexer modes: NORMAL, PROMPT, HARD_BLOCK, SOFT_BLOCK (section 2.1)
+- Grammar productions (section 3)
+- Prompt sections (section 4)
+- Distillation lifecycle (section 22)
+
+Read: {{spec_file}}
+
+You need the lexer mode transitions and grammar productions to validate parses.
+Internalize them. You will use them as the oracle for every parse.
+"""
+
+[[steps]]
+id = "pour-reader"
+title = "Pour cell-reader against each .cell file"
+needs = "read-spec"
+description = """
+YOU ARE THE CELL RUNTIME. Execute cell-reader.cell against each file in the corpus.
+
+Read cell-reader.cell first: {{corpus_dir}}/cell-reader.cell
+
+For each .cell file in the corpus:
+1. **Lex**: Break source into tokens using the 4-mode lexer
+   - NORMAL mode: structure tokens (COMMENT, MOL_OPEN, CELL_OPEN, etc)
+   - PROMPT mode: after SECTION_TAG, all indented lines are PROMPT_LINE
+   - HARD_BLOCK: inside ```...```, all lines are BODY_LINE
+   - SOFT_BLOCK: after distill>/format>, all lines are BODY_LINE until cell-level token
+
+2. **Parse**: Build AST from token stream
+   - Molecule → cells → body elements
+   - Validate against oracle: all cells have types, all types are valid
+
+3. **Validate**: Check semantic constraints
+   - Dependencies resolve, DAG is acyclic, refs exist
+
+4. **Record**: For each file, write a one-line summary:
+   filename | tokens | cells | valid | errors
+
+Start with the 5 simplest files (hello.cell, rule-of-five.cell, survey.cell,
+security-audit.cell, shiny.cell). Then do 5 medium. Then 5 complex.
+Stop after 15 files or when you find a pattern breaking.
+
+**File any grammar bugs as beads** with:
+```bash
+bd create "Cell grammar bug: <description>" -t bug -p 2 --json
+```
+
+Output: parse results table and list of bugs found.
+"""
+
+[[steps]]
+id = "analyze-patterns"
+title = "Identify distillation candidates from parse results"
+needs = "pour-reader"
+description = """
+YOU ARE CELL-ZERO'S ANALYZE CELL. Examine the parse results.
+
+For each cell in cell-reader (lex, parse, validate, emit):
+1. How consistent were the outputs across files?
+2. Which token patterns repeated identically? (distillation candidates)
+3. Which parse rules always produced the same AST shape?
+4. Which validate checks always passed?
+
+A cell is a distillation candidate when:
+- It produced consistent output across >{{convergence_threshold}} of files
+- Its output shape is stable (same keys, similar structure)
+- Input→output mapping is learnable
+
+Identify the top 3 distillation candidates.
+
+Output: ranked list of candidates with consistency scores.
+"""
+
+[[steps]]
+id = "propose-distillation"
+title = "Generate distill> blocks for top candidates"
+needs = "analyze-patterns"
+description = """
+YOU ARE CELL-ZERO'S PROPOSE CELL. For each distillation candidate:
+
+Generate a concrete distill> block that captures the input→output mapping.
+
+Example for the lex cell (most likely first candidate):
+```
+distill>
+  input_pattern: "(source text)"
+  output_map: {
+    "^--.*$" -> { type: "COMMENT", value: "(matched)" },
+    "^##\\s+\\w+" -> { type: "MOL_OPEN", value: "(matched)" },
+    "^##/" -> { type: "MOL_CLOSE", value: "##/" },
+    "^#\\s+\\w+\\s*:\\s*\\w+" -> { type: "CELL_OPEN", value: "(matched)" },
+    ...
+  }
+  fallback: llm
+```
+
+The distill> block IS the parser. Each regex pattern → token type mapping
+is a lexer rule. When enough rules accumulate, you have a complete lexer.
+
+For each candidate, produce:
+1. The distill> block content
+2. Coverage percentage (how many inputs does it handle?)
+3. Confidence (how consistent was this mapping?)
+
+Output: distill> blocks for top candidates.
+"""
+
+[[steps]]
+id = "validate-distillation"
+title = "Test distilled rules against the corpus"
+needs = "propose-distillation"
+description = """
+YOU ARE CELL-ZERO'S VALIDATE CELL. Test each proposed distillation.
+
+For each distill> block:
+1. Take 5 .cell files not used in the analysis
+2. Apply the distilled rules (regex matching for lex, pattern matching for parse)
+3. Compare output against what you would produce as an LLM
+4. Report match rate
+
+A distillation is valid if match rate >= 0.9.
+
+If a distillation fails:
+- Document why (which inputs didn't match?)
+- Propose additional patterns to cover the gaps
+- These gaps become the next iteration's focus
+
+Output: match rates and gap analysis.
+"""
+
+[[steps]]
+id = "freeze-or-iterate"
+title = "Freeze validated rules or plan next iteration"
+needs = "validate-distillation"
+description = """
+Decision point. For each validated distillation:
+
+If match_rate >= 0.9:
+  FREEZE — write the distilled cell to a new file:
+  cell-reader-v{N}.cell (where N = iteration number)
+  The frozen cell has type "distilled" instead of "llm".
+
+If match_rate < 0.9:
+  ITERATE — document gaps, plan next pour cycle.
+  Create a bead for the next iteration:
+  ```bash
+  bd create "Cell Forge iteration {N+1}: close gaps in {cell}" \
+    --description="Gaps: {list of unmatched patterns}" -t task -p 1 --json
+  ```
+
+Track convergence:
+- Iteration 1: expect ~60% of lex rules to distill
+- Iteration 3: expect ~90% of lex rules, ~50% of parse rules
+- Iteration 5: expect full lex distillation, ~80% parse
+- Iteration 10: expect near-complete distillation
+
+Output: frozen rules file OR next iteration plan.
+"""
+
+[[steps]]
+id = "report"
+title = "Forge cycle report"
+needs = "freeze-or-iterate"
+description = """
+Write the forge cycle report.
+
+Summary:
+- Files in corpus: {count}
+- Files parsed: {count}
+- Parse success rate: {rate}
+- Distillation candidates found: {count}
+- Rules frozen: {count}
+- Convergence progress: {percentage toward full parser}
+- Grammar bugs found: {count}
+- Next iteration focus: {description}
+
+Close the forge tracking bead:
+```bash
+bd close {forge_bead} --reason "Forge cycle complete: {summary}" --json
+```
+
+The forge has produced:
+1. Parse results for the corpus (training data)
+2. Distilled rules (partial parser)
+3. Bug reports (grammar improvements)
+4. Convergence tracking (how close to a full parser?)
+
+When convergence reaches {{convergence_threshold}}, the distilled rules
+ARE the Cell parser. Extract them into a standalone tool.
+"""

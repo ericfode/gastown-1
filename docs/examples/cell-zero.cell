@@ -24,9 +24,9 @@
   -- Phase 0: Validate — Cell Zero only executes valid Cell
   --
   -- Before observing anything, parse the target molecule through
-  -- cell-parse. If it doesn't parse clean, reject it. This is
+  -- cell-reader. If it doesn't parse clean, reject it. This is
   -- the gate that ensures Cell Zero never distills garbage.
-  -- As cell-parse itself distills, this gate gets faster.
+  -- As cell-reader itself distills, this gate gets faster.
 
   # load-source : script
     ```bash
@@ -40,7 +40,7 @@
     ```
   #/
 
-  # validate-cell : mol(cell-parse)
+  # validate-cell : mol(cell-reader)
     - load-source
     param.source = "{{load-source}}"
     param.filename = "{{param.target_molecule}}.cell"
@@ -68,10 +68,53 @@
     ```
   #/
 
+  -- Phase 0.5: Pour — execute the molecule, record results as beads
+  --
+  -- Cell Zero doesn't just observe — it actively pours the target molecule.
+  -- Each pour produces execution data that feeds the distillation pipeline.
+  -- The pour itself is tracked as a bead for auditability.
+
+  # pour : script
+    - gate-valid
+    ```bash
+    # Create a bead to track this pour
+    pour_id=$(bd create "Pour: {{param.target_molecule}}" \
+      --description="Cell Zero pour cycle" -t task -p 3 --json 2>/dev/null | \
+      python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+    echo "pour_bead=$pour_id"
+
+    # Sling the target molecule for execution
+    gt sling "$pour_id" gastown \
+      -m "Execute {{param.target_molecule}}.cell — you are the Cell runtime. Follow each cell in order. Validate against oracles. Record results." \
+      --no-merge 2>&1
+
+    echo "pour_dispatched=true"
+    ```
+  #/
+
+  # pour-wait : script
+    - pour
+    ```bash
+    # Wait for the pour to complete (poll bead status)
+    pour_id="{{pour.pour_bead}}"
+    for i in $(seq 1 60); do
+      status=$(bd show "$pour_id" --json 2>/dev/null | \
+        python3 -c "import json,sys; print(json.load(sys.stdin).get('status','open'))")
+      if [ "$status" = "closed" ]; then
+        echo "pour_complete=true"
+        bd show "$pour_id" --json 2>/dev/null
+        exit 0
+      fi
+      sleep 30
+    done
+    echo "pour_timeout=true"
+    ```
+  #/
+
   -- Phase 1: Observe — watch cells execute, record history
 
   # observe : script
-    - gate-valid
+    - pour-wait
     ```bash
     # Query execution history for target molecule
     bd mol history "{{param.target_molecule}}" --json 2>/dev/null
@@ -79,7 +122,6 @@
     # - input hash (blake3 of assembled prompt)
     # - output hash (blake3 of output)
     # - oracle verdict (pass/fail)
-    # - cost (tokens consumed)
     # - latency (time to complete)
     ```
   #/
