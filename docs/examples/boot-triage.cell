@@ -1,0 +1,121 @@
+-- Boot Triage — daemon's watchdog for Deacon health.
+-- observe → decide → act → cleanup → exit.
+-- Demonstrates: decision cells, conditional actions, LLM judgment.
+
+## boot-triage
+
+  # observe : script
+    ```bash
+    echo "=== DEACON STATE ==="
+    tmux has-session -t hq-deacon 2>/dev/null && echo "deacon_alive=true" || echo "deacon_alive=false"
+    gt peek deacon --lines 20 2>/dev/null || echo "peek_failed=true"
+
+    echo "=== BEAD STATE ==="
+    bd show hq-deacon --json 2>/dev/null || echo "bead_missing=true"
+
+    echo "=== ACTIVITY ==="
+    gt feed --since 10m --plain 2>/dev/null | head -20
+
+    echo "=== MAIL ==="
+    gt mail inbox deacon 2>/dev/null | head -10 | wc -l | xargs -I{} echo "pending_mail={}"
+    ```
+  #/
+
+  # decide : decision
+    - observe
+    @cost(max: 4000)
+    system>
+      You are Boot, a triage agent. You decide what action to take
+      on the Deacon based on observations. Be conservative — false
+      positives are disruptive.
+    context>
+      System observations:
+      {{observe}}
+    user>
+      Decide action based on this matrix:
+      - Dead session → START
+      - Alive, active output → NOTHING
+      - Alive, idle < 5 min → NOTHING
+      - Alive, idle 5-15 min, no mail → NOTHING
+      - Alive, idle 5-15 min, has mail → NUDGE
+      - Alive, idle > 15 min → WAKE
+      - Alive, stuck (repeated errors) → INTERRUPT
+    format> decision
+      { action: "NOTHING" | "NUDGE" | "WAKE" | "INTERRUPT" | "START",
+        reason: str, confidence: number }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["action", "reason"]);
+    assert output.action in ["NOTHING", "NUDGE", "WAKE", "INTERRUPT", "START"];
+    ```
+  #/
+
+  # act : script
+    - decide
+    ```bash
+    ACTION="{{decide.action}}"
+    case "$ACTION" in
+      NOTHING)
+        echo "No action needed."
+        ;;
+      NUDGE)
+        gt nudge --mode=queue deacon "Boot check-in: you have pending work"
+        echo "Nudged deacon."
+        ;;
+      WAKE)
+        tmux send-keys -t hq-deacon Escape
+        sleep 1
+        gt nudge deacon "Boot wake: please check inbox and pending work"
+        echo "Woke deacon."
+        ;;
+      INTERRUPT)
+        gt mail send deacon -s "INTERRUPT: Boot detected stuck state" \
+          -m "Boot observed stuck state. Reason: {{decide.reason}}"
+        echo "Interrupted deacon."
+        ;;
+      START)
+        gt deacon start
+        echo "Started deacon."
+        ;;
+    esac
+    ```
+  #/
+
+  # cleanup : script
+    - act
+    ```bash
+    # Archive stale handoffs (> 1 hour old) from Deacon inbox
+    gt mail inbox deacon --json 2>/dev/null | \
+      python3 -c "
+import json, sys, time
+msgs = json.load(sys.stdin) if sys.stdin else []
+for m in msgs:
+    if 'handoff' in m.get('subject','').lower():
+        # Archive if old (simplified check)
+        print(m.get('id',''))
+" | while read mid; do
+      [ -n "$mid" ] && gt mail archive "$mid" 2>/dev/null
+    done
+    echo "Cleanup complete."
+    ```
+  #/
+
+  # exit : script
+    - cleanup
+    ```bash
+    if [ "${GT_DEGRADED}" = "true" ]; then
+      echo "Boot triage complete (degraded mode): {{decide.action}}"
+    else
+      gt mail send boot -s "Boot handoff" -m "Completed triage.
+Action: {{decide.action}}
+Reason: {{decide.reason}}
+Time: $(date)"
+    fi
+    echo "Boot cycle done."
+    ```
+  #/
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/
