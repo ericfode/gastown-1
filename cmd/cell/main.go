@@ -7,6 +7,8 @@
 //	cell parse <file.cell>          Parse and show structure (no execution)
 //	cell lex <file.cell>            Tokenize and show token stream
 //	cell validate <file.cell>       Parse + validate semantic constraints
+//	cell dag <file.cell>            Output DOT graph of cell DAG
+//	cell dag <file.cell> --json     Output JSON graph of cell DAG
 package main
 
 import (
@@ -48,6 +50,9 @@ func main() {
 	case "pour":
 		live := len(os.Args) > 3 && os.Args[3] == "--live"
 		cmdPour(string(src), file, live)
+	case "dag":
+		asJSON := len(os.Args) > 3 && os.Args[3] == "--json"
+		cmdDag(string(src), file, asJSON)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		usage()
@@ -57,8 +62,8 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "Usage: cell <command> <file.cell> [flags]")
-	fmt.Fprintln(os.Stderr, "Commands: lex, parse, validate, pour")
-	fmt.Fprintln(os.Stderr, "Flags: --live (pour with Claude API instead of mock)")
+	fmt.Fprintln(os.Stderr, "Commands: lex, parse, validate, pour, dag")
+	fmt.Fprintln(os.Stderr, "Flags: --live (pour), --json (dag)")
 }
 
 func cmdLex(src string) {
@@ -240,6 +245,150 @@ func pourViaSubZero(mol *parser.Molecule, live bool) {
 		}
 		fmt.Printf("  %s: %s\n", name, output)
 	}
+}
+
+func cmdDag(src, filename string, asJSON bool) {
+	prog, err := parser.Parse(src)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
+		os.Exit(1)
+	}
+	prog = resolveImports(prog, filename)
+
+	if asJSON {
+		dagJSON(prog)
+	} else {
+		dagDOT(prog)
+	}
+}
+
+type dagNode struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Kind string `json:"kind"` // "cell", "map", "reduce"
+}
+
+type dagEdge struct {
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Label string `json:"label,omitempty"` // wire label, oracle gate
+}
+
+type dagGraph struct {
+	Molecule string    `json:"molecule"`
+	Nodes    []dagNode `json:"nodes"`
+	Edges    []dagEdge `json:"edges"`
+}
+
+func dagJSON(prog *parser.Program) {
+	var graphs []dagGraph
+	for _, mol := range prog.Molecules {
+		g := buildDAG(mol)
+		graphs = append(graphs, g)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.Encode(graphs)
+}
+
+func dagDOT(prog *parser.Program) {
+	for _, mol := range prog.Molecules {
+		g := buildDAG(mol)
+		fmt.Printf("digraph %q {\n", g.Molecule)
+		fmt.Println("  rankdir=LR;")
+		fmt.Println("  node [shape=box, style=rounded];")
+
+		// Node styling by type
+		for _, n := range g.Nodes {
+			shape := "box"
+			color := "black"
+			switch n.Type {
+			case "llm":
+				color = "blue"
+			case "script":
+				color = "green"
+				shape = "rectangle"
+			case "decision":
+				color = "orange"
+				shape = "diamond"
+			case "human":
+				color = "purple"
+			case "text":
+				color = "gray"
+			}
+			style := "rounded"
+			if n.Kind == "map" {
+				style = "rounded,bold"
+			} else if n.Kind == "reduce" {
+				style = "rounded,dashed"
+			}
+			fmt.Printf("  %q [shape=%s, color=%s, style=%q, label=%q];\n",
+				n.Name, shape, color, style, n.Name+"\n("+n.Type+")")
+		}
+
+		// Edges
+		for _, e := range g.Edges {
+			label := ""
+			if e.Label != "" {
+				label = fmt.Sprintf(" [label=%q]", e.Label)
+			}
+			fmt.Printf("  %q -> %q%s;\n", e.From, e.To, label)
+		}
+		fmt.Println("}")
+	}
+}
+
+func buildDAG(mol *parser.Molecule) dagGraph {
+	g := dagGraph{Molecule: mol.Name}
+
+	// Nodes
+	for _, c := range mol.Cells {
+		g.Nodes = append(g.Nodes, dagNode{Name: c.Name, Type: c.Type.Name, Kind: "cell"})
+	}
+	for _, mc := range mol.MapCells {
+		g.Nodes = append(g.Nodes, dagNode{Name: mc.Name, Type: mc.Type.Name, Kind: "map"})
+	}
+	for _, rc := range mol.ReduceCells {
+		g.Nodes = append(g.Nodes, dagNode{Name: rc.Name, Type: rc.Type.Name, Kind: "reduce"})
+	}
+
+	// Edges from refs
+	for _, c := range mol.Cells {
+		for _, ref := range c.Refs {
+			g.Edges = append(g.Edges, dagEdge{From: ref.Name, To: c.Name})
+		}
+	}
+	for _, mc := range mol.MapCells {
+		g.Edges = append(g.Edges, dagEdge{From: mc.OverRef, To: mc.Name, Label: "map over"})
+		if mc.Body != nil {
+			for _, ref := range mc.Body.Refs {
+				g.Edges = append(g.Edges, dagEdge{From: ref.Name, To: mc.Name})
+			}
+		}
+	}
+	for _, rc := range mol.ReduceCells {
+		if rc.OverRef != "" {
+			g.Edges = append(g.Edges, dagEdge{From: rc.OverRef, To: rc.Name, Label: "reduce over"})
+		} else if rc.TimesN > 0 {
+			g.Edges = append(g.Edges, dagEdge{From: rc.Name, To: rc.Name, Label: fmt.Sprintf("×%d", rc.TimesN)})
+		}
+		if rc.Body != nil {
+			for _, ref := range rc.Body.Refs {
+				g.Edges = append(g.Edges, dagEdge{From: ref.Name, To: rc.Name})
+			}
+		}
+	}
+
+	// Edges from wires
+	for _, w := range mol.Wires {
+		label := ""
+		if w.OracleGate != "" {
+			label = "?" + w.OracleGate
+		}
+		g.Edges = append(g.Edges, dagEdge{From: w.From, To: w.To, Label: label})
+	}
+
+	return g
 }
 
 func printProgram(prog *parser.Program) {
