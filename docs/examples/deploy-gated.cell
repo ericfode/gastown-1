@@ -1,0 +1,63 @@
+-- Deploy Gated — human approval gate example.
+-- Demonstrates the human cell type for interactive approval before deployment.
+-- The pipeline: test -> human approval -> deploy.
+
+## deploy-gated
+
+  input param.branch : str required
+  input param.env : str default("staging")
+
+  -- Step 1: Run tests
+  # run-tests : script
+    ```bash
+    echo "Running tests on {{param.branch}}..."
+    echo "All 42 tests passed."
+    ```
+  #/
+
+  -- Step 2: Analyze test results
+  # analyze : llm
+    - run-tests
+    system>
+      You summarize test results concisely.
+    user>
+      Test output:
+      {{run-tests}}
+      Summarize pass/fail counts and any notable failures.
+    format> summary
+      { passed: number, failed: number, notable: [str] }
+  #/
+
+  -- Step 3: Human approval gate
+  # approve-deploy : human
+    - analyze
+    user>
+      Environment: {{param.env}}
+      Branch: {{param.branch}}
+      Test summary: {{analyze}}
+      Approve deployment?
+    format> approval
+      { approved: boolean, reason: str }
+  #/
+
+  -- Step 4: Deploy (only runs after human approves)
+  # deploy : script
+    - approve-deploy
+    ```bash
+    echo "Deploying {{param.branch}} to {{param.env}}..."
+    echo "Deploy complete."
+    ```
+  #/
+
+  -- Step 5: Notification
+  # notify : text
+    - deploy
+    user>
+      Deployment of {{param.branch}} to {{param.env}} complete.
+      Approval: {{approve-deploy}}
+      Deploy log: {{deploy}}
+  #/
+
+  run-tests -> analyze -> approve-deploy -> deploy -> notify
+
+##/
