@@ -1,0 +1,53 @@
+-- Rule of Five — expansion formula in Cell.
+-- Jeffrey Emanuel's discovery: 4-5 iterative refinements produce best work.
+-- This is a recipe that wraps any cell with draft + 4 refinement passes.
+
+recipe rule-of-five(target) {
+  !add # {{target}}-draft : llm
+    system>
+      You are doing a first draft. Don't aim for perfection.
+      Get the shape right. Breadth over depth.
+    user>
+      Draft: {{target}}
+  #/
+
+  !add # {{target}}-refine-1 : llm
+    - {{target}}-draft
+    system>
+      Focus: CORRECTNESS. Fix errors, bugs, mistakes.
+    user>
+      Refine this draft. Is the logic sound?
+      {{{{target}}-draft}}
+  #/
+
+  !add # {{target}}-refine-2 : llm
+    - {{target}}-refine-1
+    system>
+      Focus: CLARITY. Can someone else understand this?
+      Simplify. Remove jargon.
+    user>
+      Refine for clarity:
+      {{{{target}}-refine-1}}
+  #/
+
+  !add # {{target}}-refine-3 : llm
+    - {{target}}-refine-2
+    system>
+      Focus: EDGE CASES. What could go wrong? What's missing?
+    user>
+      Check edge cases:
+      {{{{target}}-refine-2}}
+  #/
+
+  !add # {{target}}-refine-4 : llm
+    - {{target}}-refine-3
+    system>
+      Focus: EXCELLENCE. Final polish. Make it shine.
+    user>
+      Final refinement — make this something to be proud of:
+      {{{{target}}-refine-3}}
+  #/
+
+  -- Wire: original target now depends on the final refinement
+  !wire {{target}}-refine-4 -> {{target}}
+}

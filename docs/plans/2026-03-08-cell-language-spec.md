@@ -66,9 +66,14 @@ selector_expr = selector_pred { "and" selector_pred } ;
 selector_pred = "type" "==" cell_type
               | "depth" CMP NUMBER
               | "tag" "==" STRING
-              | "name" "==" STRING ;
+              | "name" "==" STRING
+              | "name" "~" STRING ;   (* glob/regex match — BUG-004 *)
 
 recipe        = "recipe" IDENT "(" param_list ")" "{" { operation } "}" ;
+              (* Recipe parameters are textual substitution. {{param}} in
+                 recipe bodies is expanded BEFORE parsing. This means recipe
+                 parameters can appear in identifier positions, wire endpoints,
+                 and cell names. Expansion is a pre-parse phase. — BUG-003 *)
 prompt_frag   = "prompt@" IDENT prompt_lines ;
 oracle_decl   = "#" IDENT ":" "oracle" oracle_block "#/" ;
 
@@ -147,15 +152,19 @@ each_block     = "each>" IDENT "in" REF prompt_lines ;
 
 (* === Wires === *)
 
-wire          = IDENT "->" IDENT
-              | IDENT "->" "?" IDENT "->" IDENT ;
+wire          = wire_endpoint "->" wire_endpoint
+              | wire_endpoint "->" "?" IDENT "->" wire_endpoint ;
+wire_endpoint = IDENT | "[" ident_list "]" ;
+              (* Array endpoints fan-out/fan-in. — BUG-005
+                 !wire prescan -> [impl, test] means:
+                 prescan -> impl AND prescan -> test *)
 
 (* === Graph operations === *)
 
 operation     = "!add" cell
               | "!drop" IDENT
-              | "!wire" IDENT "->" IDENT
-              | "!cut" IDENT "->" IDENT
+              | "!wire" wire_endpoint "->" wire_endpoint
+              | "!cut" wire_endpoint "->" wire_endpoint
               | "!split" IDENT "=>" "[" ident_list "]"
               | "!merge" "[" ident_list "]" "=>" IDENT
               | "!refine" IDENT "{" prompt_lines "}"

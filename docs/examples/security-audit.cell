@@ -1,0 +1,54 @@
+-- Security Audit — aspect formula in Cell.
+-- Cross-cutting security concern. Wraps implementation and submission
+-- steps with pre/post security scans via import + apply.
+
+-- This is not a molecule. It's a recipe that applies to other molecules.
+-- Usage: inside any molecule, add:
+--   import security-audit
+--   apply security-audit(implement, submit) where type == "llm"
+
+recipe security-audit(targets) {
+  -- For each target step, insert before and after scans
+
+  !add # prescan : llm
+    system>
+      You are a security scanner. Pre-implementation check.
+    user>
+      Review scope for:
+      - Secrets/credentials exposure risk
+      - Dependencies with known vulnerabilities
+      - Attack surface changes
+    format> scan
+      { risk_level: "low" | "medium" | "high", findings: [str] }
+  #/
+
+  !add # postscan : llm
+    system>
+      You are a security scanner. Post-implementation check.
+    user>
+      Scan new code for:
+      - OWASP Top 10 vulnerabilities
+      - Hardcoded secrets
+      - SQL/XSS/command injection
+      - Insecure crypto usage
+    format> scan
+      { risk_level: "low" | "medium" | "high", findings: [str], pass: "true" | "false" }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["risk_level", "findings", "pass"]);
+    reject if output.pass == "false" and output.risk_level == "high";
+    ```
+  #/
+
+  -- Wire: prescan runs before each target, postscan after
+  !wire prescan -> targets
+  !wire targets -> postscan
+}
+
+-- Example usage in a molecule:
+-- ## secure-feature
+--   import shiny
+--   import security-audit
+--   apply security-audit(implement, submit)
+-- ##/

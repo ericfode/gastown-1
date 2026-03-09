@@ -1,0 +1,240 @@
+-- PROOF OF CONCEPT: Cell Describes Its Own Evolution
+--
+-- This is not a migration plan. This is Cell proving itself.
+--
+-- A Cell program that:
+-- 1. Takes Gas Town's formula system as input
+-- 2. Translates each formula into Cell syntax
+-- 3. Validates its own translations against its own grammar
+-- 4. Discovers bugs in the language by failing to express things
+-- 5. Proposes grammar extensions to fix what it can't express
+-- 6. Rewrites itself with the extensions applied
+--
+-- Morpheus pours this by hand. Every bug found is a feature request.
+-- Every feature request improves the language. The language improves
+-- itself through the act of trying to describe everything.
+--
+-- This is Cell's bootstrap: the language that writes itself into existence.
+
+## cell-proof-of-concept
+
+  input param.formula_dir : str default(".beads/formulas")
+
+  -- Phase 1: Inventory — what are we trying to express?
+
+  # inventory : script
+    ```bash
+    ls -1 {{param.formula_dir}}/*.toml | while read f; do
+      name=$(basename "$f" .formula.toml)
+      size=$(wc -c < "$f")
+      type=$(grep '^type' "$f" 2>/dev/null | head -1 | cut -d'"' -f2)
+      echo "$name|$type|$size"
+    done
+    ```
+  #/
+
+  # classify : llm
+    - inventory
+    @cost(max: 8000)
+    system>
+      You are classifying formulas by the Cell features needed to express them.
+    user>
+      Given this formula inventory:
+      {{inventory}}
+
+      Classify each into tiers by Cell complexity:
+      T1: sequential (cells, wires, refs)
+      T2: parallel (map, prompt fragments)
+      T3: scripted (script cells, shell)
+      T4: conditional (decision cells, oracle gates, sub-molecules)
+      T5: orchestral (import/apply, recipes, metacircular)
+
+      Start with T1. We prove the language tier by tier.
+    format> tiers
+      {
+        t1: [str], t2: [str], t3: [str], t4: [str], t5: [str],
+        total: number
+      }
+  #/
+
+  -- Phase 2: Translate — express each formula in Cell
+
+  map # translate : llm over {{classify.t1}} as formula
+    @cost(max: 10000)
+    @retry(max: 3)
+    system>
+      You are a Cell language author. You write Cell programs.
+      The Cell grammar is at docs/plans/2026-03-08-cell-language-spec.md.
+      You have the full EBNF. Write valid Cell.
+    user>
+      Read {{param.formula_dir}}/{{formula}}.formula.toml.
+      Translate it to Cell syntax. Be faithful to the original semantics.
+      If you CAN'T express something, say what's missing.
+    format> translation
+      {
+        formula: str,
+        cell_source: str,
+        features_used: [str],
+        gaps: [{ construct: str, reason: str }]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["formula", "cell_source", "features_used"]);
+    assert len(output.cell_source) > 50;
+    ```
+  #/
+
+  -- Phase 3: Validate — check our own work
+
+  # validate : llm
+    - translate
+    @cost(max: 16000)
+    system>
+      You are a Cell parser (human-simulated).
+      Parse each translation against the EBNF grammar.
+      Be strict. Every deviation is a bug report.
+    user>
+      each> t in {{translate.*}}
+        --- {{t.formula}} ---
+        {{t.cell_source}}
+
+      For each translation:
+      1. Check every production against the EBNF
+      2. Flag type errors (str vs string, mol vs molecule)
+      3. Flag missing delimiters (#/ closers, ## molecule boundaries)
+      4. Flag undefined constructs (things used but not in grammar)
+      5. Flag semantic issues (circular deps, unreachable cells)
+    format> report
+      {
+        translations_checked: number,
+        valid: number,
+        invalid: number,
+        bugs: [{
+          formula: str,
+          line: number,
+          expected: str,
+          got: str,
+          severity: "error" | "warning" | "info"
+        }]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["translations_checked", "valid", "invalid", "bugs"]);
+    assert output.translations_checked > 0;
+    ```
+  #/
+
+  -- Phase 4: Discover — what can't Cell express?
+
+  # discover-gaps : llm
+    - validate
+    - translate
+    @cost(max: 12000)
+    system>
+      You are a language designer analyzing expressiveness gaps.
+    user>
+      Review all translation gaps:
+      each> t in {{translate.*}}
+        {{t.formula}}: {{t.gaps}}
+
+      And validation bugs:
+      {{validate.bugs}}
+
+      For each gap or recurring bug pattern:
+      1. Is this a grammar deficiency or a translator error?
+      2. If grammar: propose a minimal EBNF extension
+      3. If translator: document the correct way to express it
+      4. Rank by impact (how many formulas affected?)
+    format> analysis
+      {
+        grammar_extensions: [{
+          name: str,
+          ebnf: str,
+          rationale: str,
+          formulas_affected: number
+        }],
+        translator_errors: [{
+          pattern: str,
+          correction: str,
+          count: number
+        }],
+        language_verdict: str
+      }
+  #/
+
+  -- Phase 5: Evolve — Cell improves itself
+
+  meta # evolve : llm
+    - discover-gaps
+    @cost(max: 16000)
+    system>
+      You are a metacircular Cell author.
+      You emit Cell source code as your output.
+      Your output will become the next generation of this program.
+    user>
+      Given these language analysis results:
+      {{discover-gaps}}
+
+      Rewrite this very Cell program (cell-proof-of-concept) to:
+      1. Apply any grammar extensions that were proposed
+      2. Fix all translator error patterns
+      3. Add Stage 2 (T2 convoy formulas) to the translate map
+      4. Make the validation stricter based on bugs found
+
+      Output a complete, valid .cell file.
+      This is Cell writing Cell. Be precise.
+    format> evolution
+      {
+        generation: number,
+        cell_source: str,
+        changes: [str],
+        new_features: [str]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["generation", "cell_source", "changes"]);
+    assert output.generation >= 2;
+    assert len(output.cell_source) > len("## cell-proof-of-concept");
+    ```
+  meta #/
+
+  -- Phase 6: Report — what did we prove?
+
+  # proof-report : llm
+    - validate
+    - discover-gaps
+    - evolve
+    @cost(max: 8000)
+    system>
+      You are writing the proof-of-concept report.
+      Be honest. Failures are as valuable as successes.
+    user>
+      Summarize what Cell proved about itself:
+
+      Translations: {{validate.translations_checked}} attempted,
+        {{validate.valid}} valid, {{validate.invalid}} invalid
+      Gaps found: {{discover-gaps.grammar_extensions}}
+      Self-evolution: {{evolve.changes}}
+
+      Answer:
+      1. Can Cell express Gas Town's formula system? (coverage %)
+      2. What did Cell discover about its own grammar?
+      3. Did the metacircular evolution produce valid Cell?
+      4. What is Cell's existential value?
+    format> proof
+      {
+        coverage_pct: number,
+        grammar_bugs_found: number,
+        grammar_extensions_proposed: number,
+        self_evolution_valid: "true" | "false",
+        verdict: str,
+        existential_value: str
+      }
+  #/
+
+  squash> trigger: on_complete template: proof include_metrics: true
+
+##/
