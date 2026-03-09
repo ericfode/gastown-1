@@ -1,0 +1,30 @@
+# Spec Section 18: Operational Molecule (Script Cells)
+# dog-reaper: stale bead cleanup pipeline
+
+cell find-stale {
+    type: script
+    prompt: """
+        bd list --json --status=open \
+          | jq '[.[] | select(.updated_at < (now - {{param.threshold}}))]'
+    """
+}
+
+cell triage {
+    type: llm
+    prompt: """
+        These beads haven't been updated in {{param.threshold}}:
+        {{find-stale}}
+        Categorize each as: close (abandoned), nudge (still active),
+        or escalate (blocked).
+    """
+    refs: [find-stale]
+}
+
+cell execute {
+    type: script
+    prompt: """
+        echo '{{triage}}' | jq -r '.close[]' | xargs -I{} bd close {} --reason "stale"
+        echo '{{triage}}' | jq -r '.escalate[]' | xargs -I{} gt escalate -s MEDIUM "Stale: {}"
+    """
+    refs: [triage]
+}

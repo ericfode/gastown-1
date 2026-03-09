@@ -1,0 +1,15 @@
+# Spec Section 6: Combinators - reduce (sequential fold)
+# summarize: accumulate document summaries
+
+cell documents {
+    type: text
+    prompt: "Load the document collection"
+}
+
+cell summarize {
+    type: llm
+    prompt: """
+        Incorporate the next document into the running summary.
+    """
+    refs: [documents]
+}

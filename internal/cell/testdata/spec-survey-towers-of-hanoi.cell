@@ -1,0 +1,55 @@
+# Survey: towers-of-hanoi (DIRECT)
+# 9-step linear chain, trivial deterministic steps
+
+cell move-1 {
+    type: llm
+    prompt: "Move disk 1 from A to C"
+}
+
+cell move-2 {
+    type: llm
+    prompt: "Move disk 2 from A to B. State: {{move-1}}"
+    refs: [move-1]
+}
+
+cell move-3 {
+    type: llm
+    prompt: "Move disk 1 from C to B. State: {{move-2}}"
+    refs: [move-2]
+}
+
+cell move-4 {
+    type: llm
+    prompt: "Move disk 3 from A to C. State: {{move-3}}"
+    refs: [move-3]
+}
+
+cell move-5 {
+    type: llm
+    prompt: "Move disk 1 from B to A. State: {{move-4}}"
+    refs: [move-4]
+}
+
+cell move-6 {
+    type: llm
+    prompt: "Move disk 2 from B to C. State: {{move-5}}"
+    refs: [move-5]
+}
+
+cell move-7 {
+    type: llm
+    prompt: "Move disk 1 from A to C. State: {{move-6}}"
+    refs: [move-6]
+}
+
+cell move-8 {
+    type: llm
+    prompt: "Move disk 4 from A to B. State: {{move-7}}"
+    refs: [move-7]
+}
+
+cell move-9 {
+    type: llm
+    prompt: "Verify all disks on target peg. State: {{move-8}}"
+    refs: [move-8]
+}

@@ -1,0 +1,19 @@
+# Spec Section 15: Convoy (code-review)
+# Fan-out map cell + synthesis
+
+cell leg {
+    type: llm
+    prompt: """
+        You are a specialized code reviewer in a convoy review.
+        Your focus: {{param.aspect-focus}}
+        {{param.aspect-description}}
+    """
+}
+
+cell synthesis {
+    type: llm
+    prompt: """
+        Synthesize: deduplicate, prioritize, produce verdict.
+    """
+    refs: [leg]
+}

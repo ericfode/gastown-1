@@ -1,0 +1,77 @@
+# Exercises all reactive sheet cell types + distilled type
+# Ensures every valid cell type is covered by the test corpus
+
+cell requirements-doc {
+    type: text
+    prompt: "Load the project requirements document"
+}
+
+cell bug-inventory {
+    type: inventory
+    prompt: """
+        Find all bugs in {{requirements-doc}}.
+        Catalog each with severity and location.
+    """
+    refs: [requirements-doc]
+}
+
+cell architecture-diagram {
+    type: diagram
+    prompt: """
+        Generate an architecture diagram from {{requirements-doc}}.
+    """
+    refs: [requirements-doc]
+}
+
+cell business-rules {
+    type: laws
+    prompt: """
+        Extract business rules and invariants from {{requirements-doc}}.
+    """
+    refs: [requirements-doc]
+}
+
+cell system-boundaries {
+    type: boundaries
+    prompt: """
+        Identify system boundaries and integration points from {{requirements-doc}}.
+    """
+    refs: [requirements-doc]
+}
+
+cell analysis-synthesis {
+    type: synthesis
+    prompt: """
+        Synthesize findings from all analyses:
+        Bugs: {{bug-inventory}}
+        Architecture: {{architecture-diagram}}
+        Rules: {{business-rules}}
+        Boundaries: {{system-boundaries}}
+    """
+    refs: [bug-inventory, architecture-diagram, business-rules, system-boundaries]
+}
+
+cell implementation-plan {
+    type: code
+    prompt: """
+        Generate implementation plan based on synthesis: {{analysis-synthesis}}
+    """
+    refs: [analysis-synthesis]
+}
+
+cell go-no-go-decision {
+    type: decision
+    prompt: """
+        Based on the implementation plan: {{implementation-plan}}
+        Decide: GO or NO-GO for this sprint.
+    """
+    refs: [implementation-plan]
+}
+
+cell cached-analysis {
+    type: distilled
+    prompt: """
+        Distilled version of analysis for caching: {{analysis-synthesis}}
+    """
+    refs: [analysis-synthesis]
+}

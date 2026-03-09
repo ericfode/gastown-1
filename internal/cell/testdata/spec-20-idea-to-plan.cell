@@ -1,0 +1,26 @@
+# Spec Section 20: Sub-Molecule Invocation
+# idea-to-plan: nested molecule execution
+
+cell gather-requirements {
+    type: llm
+    prompt: """
+        Gather requirements for {{param.idea}}.
+    """
+}
+
+cell generate-plan {
+    type: llm
+    prompt: """
+        Generate a plan based on requirements: {{gather-requirements}}
+    """
+    refs: [gather-requirements]
+}
+
+cell review-plan {
+    type: llm
+    prompt: """
+        Review this plan: {{generate-plan}}
+        Verdict: APPROVE or REVISE with feedback.
+    """
+    refs: [generate-plan]
+}

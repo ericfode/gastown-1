@@ -1,0 +1,70 @@
+# Survey: mol-polecat-conflict-resolve (DIRECT)
+# Linear 8-step merge conflict resolution
+
+cell detect-conflicts {
+    type: script
+    prompt: """
+        git merge --no-commit origin/main 2>&1 || true
+        git diff --name-only --diff-filter=U
+    """
+}
+
+cell read-conflicted-files {
+    type: script
+    prompt: """
+        git diff --name-only --diff-filter=U | xargs cat
+    """
+    refs: [detect-conflicts]
+}
+
+cell analyze-conflicts {
+    type: llm
+    prompt: """
+        Conflicted files: {{read-conflicted-files}}
+        Analyze each conflict. Determine the intent of both sides.
+    """
+    refs: [read-conflicted-files]
+}
+
+cell resolve-conflicts {
+    type: llm
+    prompt: """
+        Analysis: {{analyze-conflicts}}
+        Resolve each conflict preserving both intents where possible.
+    """
+    refs: [analyze-conflicts]
+}
+
+cell apply-resolutions {
+    type: script
+    prompt: """
+        echo 'Applying resolutions from: {{resolve-conflicts}}'
+    """
+    refs: [resolve-conflicts]
+}
+
+cell verify-build {
+    type: script
+    prompt: """
+        go build ./...
+        go test ./...
+    """
+    refs: [apply-resolutions]
+}
+
+cell commit-merge {
+    type: script
+    prompt: """
+        git add -A
+        git commit -m "resolve: merge conflicts"
+    """
+    refs: [verify-build]
+}
+
+cell report {
+    type: llm
+    prompt: """
+        Conflict resolution complete: {{commit-merge}}
+    """
+    refs: [commit-merge]
+}

@@ -1,0 +1,25 @@
+# Survey: mol-convoy-cleanup (DIRECT)
+# Variables map to input params
+
+cell list-convoys {
+    type: script
+    prompt: """
+        bd list --json --type=convoy --status=stale
+    """
+}
+
+cell cleanup-convoys {
+    type: script
+    prompt: """
+        echo '{{list-convoys}}' | jq -r '.[].id' | xargs -I{} bd close {} --reason "stale convoy"
+    """
+    refs: [list-convoys]
+}
+
+cell verify {
+    type: script
+    prompt: """
+        bd list --json --type=convoy --status=stale | jq 'length'
+    """
+    refs: [cleanup-convoys]
+}

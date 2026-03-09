@@ -1,0 +1,27 @@
+# Survey: mol-algebraic-survey (DIRECT)
+# Linear sequential molecule
+
+cell gather-formulas {
+    type: script
+    prompt: """
+        find formulas/ -name '*.toml' -exec cat {} +
+    """
+}
+
+cell analyze-expressibility {
+    type: llm
+    prompt: """
+        Analyze these TOML formulas: {{gather-formulas}}
+        For each, determine if it maps to Cell: DIRECT, EXTENDED, or GAP.
+    """
+    refs: [gather-formulas]
+}
+
+cell generate-report {
+    type: llm
+    prompt: """
+        Analysis: {{analyze-expressibility}}
+        Generate a coverage report with recommendations.
+    """
+    refs: [analyze-expressibility]
+}

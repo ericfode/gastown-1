@@ -6,8 +6,10 @@ import (
 	"strings"
 )
 
-// ValidCellTypes lists the recognized cell types from the reactive sheet model.
+// ValidCellTypes lists the recognized cell types from the Cell language spec.
+// Includes both reactive sheet types and Cell-specific types.
 var ValidCellTypes = map[string]bool{
+	// Reactive sheet types
 	"text":       true,
 	"inventory":  true,
 	"diagram":    true,
@@ -16,6 +18,12 @@ var ValidCellTypes = map[string]bool{
 	"synthesis":  true,
 	"code":       true,
 	"decision":   true,
+	// Cell language types
+	"llm":        true,
+	"script":     true,
+	"oracle":     true,
+	"meta":       true,
+	"distilled":  true,
 }
 
 // ValidOperations lists the 8 graph primitives from the Formula Engine v2 spec.

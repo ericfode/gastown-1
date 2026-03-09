@@ -1,0 +1,42 @@
+# Spec Section 14: Workflow (shiny)
+# Linear 5-step engineering workflow
+
+cell design {
+    type: llm
+    prompt: """
+        Design the architecture for {{param.feature}}.
+        Consider edge cases and trade-offs.
+    """
+}
+
+cell implement {
+    type: llm
+    prompt: """
+        Implement {{param.feature}} per the design: {{design}}
+    """
+    refs: [design]
+}
+
+cell review {
+    type: llm
+    prompt: """
+        Review the implementation. Check for bugs, readability, security.
+    """
+    refs: [implement]
+}
+
+cell test {
+    type: llm
+    prompt: """
+        Write and run tests for {{param.feature}}.
+    """
+    refs: [review]
+}
+
+cell submit {
+    type: llm
+    prompt: """
+        Submit for merge. Final git check, clear commit message.
+    """
+    refs: [test]
+}

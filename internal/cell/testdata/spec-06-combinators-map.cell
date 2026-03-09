@@ -1,0 +1,16 @@
+# Spec Section 6: Combinators - map (parallel fan-out)
+# review: one cell per aspect
+
+cell source-data {
+    type: text
+    prompt: "Read source data for review"
+}
+
+cell review {
+    type: llm
+    prompt: """
+        Focus on: {{source-data}}
+        Provide detailed review.
+    """
+    refs: [source-data]
+}

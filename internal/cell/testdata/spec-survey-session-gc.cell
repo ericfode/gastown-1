@@ -1,0 +1,25 @@
+# Survey: mol-session-gc (DIRECT)
+# Sequential script cells for session garbage collection
+
+cell list-sessions {
+    type: script
+    prompt: """
+        gt session list --json --stale
+    """
+}
+
+cell identify-orphans {
+    type: script
+    prompt: """
+        echo '{{list-sessions}}' | jq '[.[] | select(.age_hours > 24)]'
+    """
+    refs: [list-sessions]
+}
+
+cell cleanup {
+    type: script
+    prompt: """
+        echo '{{identify-orphans}}' | jq -r '.[].id' | xargs -I{} gt session destroy {}
+    """
+    refs: [identify-orphans]
+}

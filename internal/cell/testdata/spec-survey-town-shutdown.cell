@@ -1,0 +1,64 @@
+# Survey: mol-town-shutdown (DIRECT)
+# Linear 8-step shutdown pipeline of script cells
+
+cell notify-agents {
+    type: script
+    prompt: "gt nudge all 'Shutdown initiated'"
+}
+
+cell drain-work {
+    type: script
+    prompt: """
+        gt mol drain --timeout 30s
+    """
+    refs: [notify-agents]
+}
+
+cell checkpoint-state {
+    type: script
+    prompt: """
+        bd sync --force
+    """
+    refs: [drain-work]
+}
+
+cell stop-polecats {
+    type: script
+    prompt: """
+        gt polecat stop --all
+    """
+    refs: [checkpoint-state]
+}
+
+cell stop-witness {
+    type: script
+    prompt: """
+        gt witness stop
+    """
+    refs: [stop-polecats]
+}
+
+cell stop-refinery {
+    type: script
+    prompt: """
+        gt refinery stop
+    """
+    refs: [stop-witness]
+}
+
+cell stop-dolt {
+    type: script
+    prompt: """
+        gt dolt stop
+    """
+    refs: [stop-refinery]
+}
+
+cell cleanup {
+    type: script
+    prompt: """
+        rm -f /tmp/gt-*.sock
+        echo "Shutdown complete"
+    """
+    refs: [stop-dolt]
+}

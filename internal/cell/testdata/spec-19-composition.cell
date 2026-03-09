@@ -1,0 +1,17 @@
+# Spec Section 19: Composition (Import, Apply, Aspects)
+# security-prescan and security-postscan recipes
+
+cell implement {
+    type: llm
+    prompt: "Implement the feature"
+}
+
+recipe security-prescan(target) {
+    prescan = addCell({ prompt: "Pre-implementation security check" })
+    addRef(target, prescan)
+}
+
+recipe security-postscan(target) {
+    postscan = addCell({ prompt: "Post-implementation security audit" })
+    addRef(postscan, target)
+}

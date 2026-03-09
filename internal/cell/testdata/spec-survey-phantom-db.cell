@@ -1,0 +1,27 @@
+# Survey: mol-dog-phantom-db (DIRECT)
+# Linear 3-step scan-quarantine-report
+
+cell scan {
+    type: script
+    prompt: """
+        gt dolt cleanup --dry-run --json
+    """
+}
+
+cell quarantine {
+    type: script
+    prompt: """
+        echo '{{scan}}' | jq -r '.orphans[]' | xargs -I{} gt dolt quarantine {}
+    """
+    refs: [scan]
+}
+
+cell report {
+    type: llm
+    prompt: """
+        Phantom database scan results: {{scan}}
+        Quarantine actions: {{quarantine}}
+        Summarize what was found and cleaned.
+    """
+    refs: [scan, quarantine]
+}

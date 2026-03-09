@@ -1,0 +1,26 @@
+# Spec Section 9: Oracles
+# Inline oracle, standalone oracle, wire oracle
+
+cell report {
+    type: llm
+    prompt: """
+        Generate a financial report with thesis and recommendation.
+    """
+    oracle: json-report-validator
+}
+
+cell json-report-validator {
+    type: oracle
+    prompt: """
+        Validate JSON structure: must parse, length >= 100 chars.
+    """
+    refs: [report]
+}
+
+cell consumer {
+    type: llm
+    prompt: """
+        Process the validated report: {{report}}
+    """
+    refs: [report]
+}

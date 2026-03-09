@@ -1,0 +1,29 @@
+# Spec Section 16: Metacircular Evolution
+# Script cells + meta cell
+
+cell traces {
+    type: script
+    prompt: """
+        bd mol traces {{param.mol_id}} --format json
+    """
+}
+
+cell history {
+    type: script
+    prompt: """
+        bd mol digests {{param.mol_id}} --last 5 --format json
+    """
+}
+
+cell evolve {
+    type: meta
+    prompt: """
+        You optimize reactive bead DAGs by emitting Cell operations.
+        Traces: {{traces}}
+        History: {{history}}
+        Find the slowest cell. Split it into parallel sub-cells.
+        If a cell is stable for 5+ generations, seed it.
+        Emit ONLY valid Cell operations.
+    """
+    refs: [traces, history]
+}

@@ -1,0 +1,45 @@
+# Survey: mol-boot-triage (DIRECT)
+# Script-heavy 5-step sequential chain
+
+cell check-dolt {
+    type: script
+    prompt: """
+        gt dolt status --json
+    """
+}
+
+cell check-worktrees {
+    type: script
+    prompt: """
+        git worktree list --porcelain
+    """
+    refs: [check-dolt]
+}
+
+cell check-processes {
+    type: script
+    prompt: """
+        ps aux | grep -E 'gt|bd|dolt' | grep -v grep
+    """
+    refs: [check-worktrees]
+}
+
+cell triage {
+    type: llm
+    prompt: """
+        Boot environment check results:
+        Dolt: {{check-dolt}}
+        Worktrees: {{check-worktrees}}
+        Processes: {{check-processes}}
+        Diagnose issues and recommend actions.
+    """
+    refs: [check-dolt, check-worktrees, check-processes]
+}
+
+cell remediate {
+    type: script
+    prompt: """
+        echo "Boot triage complete. Actions: {{triage}}"
+    """
+    refs: [triage]
+}

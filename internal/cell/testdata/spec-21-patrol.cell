@@ -1,0 +1,34 @@
+# Spec Section 21: Wire Modifiers (OR-Join, Conditional, Loop-back)
+# patrol: scan-triage-act loop
+
+cell scan {
+    type: script
+    prompt: """
+        gt dolt status --json
+    """
+}
+
+cell triage {
+    type: llm
+    prompt: """
+        Assess: {{scan}}
+        Verdict: clean (nothing to do), act (take action), escalate.
+    """
+    refs: [scan]
+}
+
+cell act {
+    type: llm
+    prompt: """
+        Execute remediation: {{triage}}
+    """
+    refs: [triage]
+}
+
+cell wait-and-rescan {
+    type: script
+    prompt: """
+        sleep {{param.interval}}
+    """
+    refs: [act]
+}

@@ -1,0 +1,43 @@
+# Survey: mol-polecat-lease (DIRECT)
+# Linear 5-step monitoring workflow
+
+cell check-heartbeat {
+    type: script
+    prompt: """
+        gt polecat heartbeat --json
+    """
+}
+
+cell check-lease {
+    type: script
+    prompt: """
+        gt polecat lease check --json
+    """
+    refs: [check-heartbeat]
+}
+
+cell evaluate-health {
+    type: llm
+    prompt: """
+        Heartbeat: {{check-heartbeat}}
+        Lease: {{check-lease}}
+        Is the polecat healthy and should retain its lease?
+    """
+    refs: [check-heartbeat, check-lease]
+}
+
+cell renew-or-revoke {
+    type: script
+    prompt: """
+        echo 'Health evaluation: {{evaluate-health}}'
+    """
+    refs: [evaluate-health]
+}
+
+cell report {
+    type: llm
+    prompt: """
+        Lease check complete. Status: {{renew-or-revoke}}
+    """
+    refs: [renew-or-revoke]
+}

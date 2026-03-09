@@ -1,0 +1,22 @@
+# Spec Section 10: Graph Operations - Recipes
+# insert-gate recipe + cells
+
+cell upstream {
+    type: text
+    prompt: "Produce upstream data"
+}
+
+cell downstream {
+    type: llm
+    prompt: """
+        Process: {{upstream}}
+    """
+    refs: [upstream]
+}
+
+recipe insert-gate(upstream, downstream, check) {
+    gate = addCell({ prompt: check })
+    removeRef(downstream, upstream)
+    addRef(gate, upstream)
+    addRef(downstream, gate)
+}

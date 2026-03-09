@@ -1,0 +1,69 @@
+# Survey: mol-polecat-work (DIRECT)
+# Linear 8-step worker lifecycle
+
+cell load-context {
+    type: llm
+    prompt: "Load context and verify assignment"
+}
+
+cell setup-branch {
+    type: script
+    prompt: """
+        git fetch origin
+        git checkout -b feature-branch origin/main
+    """
+    refs: [load-context]
+}
+
+cell implement {
+    type: llm
+    prompt: """
+        Implement the solution. Follow codebase conventions.
+        Previous step: {{setup-branch}}
+    """
+    refs: [setup-branch]
+}
+
+cell self-review {
+    type: llm
+    prompt: """
+        Review changes: {{implement}}
+        Check for bugs, security, style, completeness.
+    """
+    refs: [implement]
+}
+
+cell build-check {
+    type: script
+    prompt: """
+        go build ./...
+        go test ./...
+    """
+    refs: [self-review]
+}
+
+cell commit {
+    type: script
+    prompt: """
+        git add -A
+        git commit -m "feat: implementation"
+    """
+    refs: [build-check]
+}
+
+cell rebase-verify {
+    type: script
+    prompt: """
+        git fetch origin main
+        git rebase origin/main
+    """
+    refs: [commit]
+}
+
+cell submit {
+    type: script
+    prompt: """
+        gt done --pre-verified
+    """
+    refs: [rebase-verify]
+}

@@ -1,0 +1,61 @@
+# Survey: mol-polecat-review-pr (DIRECT)
+# Linear 7-step PR review pipeline
+
+cell fetch-pr {
+    type: script
+    prompt: """
+        gh pr view {{param.pr}} --json title,body,files,reviews
+    """
+}
+
+cell read-diff {
+    type: script
+    prompt: """
+        gh pr diff {{param.pr}}
+    """
+    refs: [fetch-pr]
+}
+
+cell analyze-changes {
+    type: llm
+    prompt: """
+        PR metadata: {{fetch-pr}}
+        Diff: {{read-diff}}
+        Analyze the changes for correctness, style, and security.
+    """
+    refs: [fetch-pr, read-diff]
+}
+
+cell check-tests {
+    type: script
+    prompt: """
+        gh pr checks {{param.pr}} --json name,status,conclusion
+    """
+    refs: [analyze-changes]
+}
+
+cell write-review {
+    type: llm
+    prompt: """
+        Analysis: {{analyze-changes}}
+        Test status: {{check-tests}}
+        Write a review with approve/request-changes verdict.
+    """
+    refs: [analyze-changes, check-tests]
+}
+
+cell submit-review {
+    type: script
+    prompt: """
+        echo '{{write-review}}' | gh pr review {{param.pr}} --body-file -
+    """
+    refs: [write-review]
+}
+
+cell report {
+    type: llm
+    prompt: """
+        PR review submitted: {{submit-review}}
+    """
+    refs: [submit-review]
+}

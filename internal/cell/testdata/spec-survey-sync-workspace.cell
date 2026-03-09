@@ -1,0 +1,33 @@
+# Survey: mol-sync-workspace (DIRECT)
+# Sequential script cells with config vars
+
+cell fetch-remote {
+    type: script
+    prompt: """
+        git fetch origin --prune
+    """
+}
+
+cell sync-submodules {
+    type: script
+    prompt: """
+        git submodule update --init --recursive
+    """
+    refs: [fetch-remote]
+}
+
+cell install-deps {
+    type: script
+    prompt: """
+        go mod download
+    """
+    refs: [sync-submodules]
+}
+
+cell verify {
+    type: script
+    prompt: """
+        go build ./...
+    """
+    refs: [install-deps]
+}

@@ -1,0 +1,25 @@
+# Spec Section 4: Prompt Sections
+# Structured prompts with system/context/user
+
+cell valuation {
+    type: llm
+    prompt: """
+        You are a senior equity analyst.
+        You cite sources. You flag uncertainty.
+        Build a DCF model for the given ticker.
+    """
+}
+
+cell source-files {
+    type: text
+    prompt: "Collect and categorize source files"
+}
+
+cell conditional-review {
+    type: llm
+    prompt: """
+        Review the source files: {{source-files}}
+        Focus on files requiring attention.
+    """
+    refs: [source-files]
+}

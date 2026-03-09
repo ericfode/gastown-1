@@ -1,0 +1,27 @@
+# Survey: mol-dog-doctor (DIRECT)
+# Linear 3-step probe-inspect-report
+
+cell probe {
+    type: script
+    prompt: """
+        gt dolt status --json
+    """
+}
+
+cell inspect {
+    type: llm
+    prompt: """
+        Inspect Dolt health data: {{probe}}
+        Check for: orphan databases, high latency, connection issues.
+    """
+    refs: [probe]
+}
+
+cell report {
+    type: llm
+    prompt: """
+        Generate health report: {{inspect}}
+        Format: summary, issues found, recommendations.
+    """
+    refs: [inspect]
+}
