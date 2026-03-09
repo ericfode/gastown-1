@@ -371,3 +371,29 @@ fallback: llm`,
 		t.Errorf("expected action=UNKNOWN for no-match, got %q", result.Fields["action"])
 	}
 }
+
+func TestOracleForLoop(t *testing.T) {
+	oracle := &parser.OracleBlock{
+		Statements: []*parser.OracleStmt{
+			{Kind: "json_parse", Args: []string{"output"}},
+			{
+				Kind: "for",
+				Expr: "for c in output.items",
+				Body: []*parser.OracleStmt{
+					{Kind: "assert", Expr: `c.name in ["a", "b", "c"]`},
+				},
+			},
+		},
+	}
+
+	output := `{"items":[{"name":"a"},{"name":"b"}]}`
+	if err := EvalOracle(oracle, output); err != nil {
+		t.Errorf("expected pass, got: %v", err)
+	}
+
+	// Test failure case
+	outputBad := `{"items":[{"name":"a"},{"name":"INVALID"}]}`
+	if err := EvalOracle(oracle, outputBad); err == nil {
+		t.Error("expected failure for invalid item, got nil")
+	}
+}

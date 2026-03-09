@@ -628,18 +628,31 @@ func (p *Parser) parseOracleBlock() *OracleBlock {
 	return oracle
 }
 
-// parseOracleStatements does a simple line-by-line parse of oracle content.
+// parseOracleStatements does a line-by-line parse of oracle content.
+// Handles nested for/if blocks by collecting body statements.
 func parseOracleStatements(content string) []*OracleStmt {
-	var stmts []*OracleStmt
 	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	stmts, _ := parseOracleLines(lines, 0)
+	return stmts
+}
+
+func parseOracleLines(lines []string, start int) ([]*OracleStmt, int) {
+	var stmts []*OracleStmt
+	i := start
+	for i < len(lines) {
+		line := strings.TrimSpace(lines[i])
 		if line == "" || strings.HasPrefix(line, "--") {
+			i++
 			continue
+		}
+		// End of block
+		if line == "}" {
+			return stmts, i + 1
 		}
 		line = strings.TrimSuffix(line, ";")
 		line = strings.TrimSpace(line)
 		if line == "" {
+			i++
 			continue
 		}
 
@@ -668,16 +681,35 @@ func parseOracleStatements(content string) []*OracleStmt {
 			stmt.Expr = line
 		case strings.HasPrefix(line, "for "):
 			stmt.Kind = "for"
-			stmt.Expr = line
+			// "for VAR in EXPR {" → extract var and expr
+			stmt.Expr = strings.TrimSuffix(line, "{")
+			stmt.Expr = strings.TrimSpace(stmt.Expr)
+			// Parse body until }
+			if strings.HasSuffix(line, "{") {
+				var nextI int
+				stmt.Body, nextI = parseOracleLines(lines, i+1)
+				i = nextI
+				stmts = append(stmts, stmt)
+				continue
+			}
 		case strings.HasPrefix(line, "if "):
 			stmt.Kind = "if"
-			stmt.Expr = line
+			stmt.Expr = strings.TrimSuffix(line, "{")
+			stmt.Expr = strings.TrimSpace(stmt.Expr)
+			if strings.HasSuffix(line, "{") {
+				var nextI int
+				stmt.Body, nextI = parseOracleLines(lines, i+1)
+				i = nextI
+				stmts = append(stmts, stmt)
+				continue
+			}
 		default:
 			stmt.Kind = "expr"
 		}
 		stmts = append(stmts, stmt)
+		i++
 	}
-	return stmts
+	return stmts, i
 }
 
 func extractArgs(line string) []string {
