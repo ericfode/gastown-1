@@ -1,0 +1,95 @@
+-- Convoy Feed: Dispatch ready work from stranded convoys to idle polecats.
+-- Single-pass: find ready issues, check capacity, sling, report, exit.
+
+## convoy-feed {
+  input param.convoy : str required
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # load-convoy : script
+    @retry(max: 2)
+    user>
+      Load convoy and identify ready (open, unblocked, unassigned) issues.
+    ```bash
+    gt convoy status {{param.convoy}} --json
+    ISSUES=$(bd list --convoy={{param.convoy}} --status=open --json)
+    BLOCKED=$(bd blocked --json 2>/dev/null || echo "[]")
+
+    echo "$ISSUES" | jq --argjson blocked "$BLOCKED" '
+      [.[] | select(
+        .status == "open" and
+        .assignee == null and
+        (.id as $id | $blocked | map(.id) | index($id) | not)
+      )] | sort_by(.priority)'
+    ```
+  #/
+
+  # check-capacity : script
+    - load-convoy
+    user>
+      Count idle polecats across rigs that have ready issues.
+    ```bash
+    READY=$(echo '{{load-convoy}}' | jq -r '.[].id' | wc -l)
+    echo "ready_issues=$READY"
+
+    for rig in $(echo '{{load-convoy}}' | jq -r '.[].id' | sed 's/-.*//' | sort -u); do
+      gt polecats "$rig" --json 2>/dev/null || echo "[]"
+    done | jq -s 'flatten | map(select(.status == "idle")) | length' \
+      | xargs -I{} echo "idle_polecats={}"
+    ```
+  #/
+
+  # dispatch-work : script
+    - check-capacity
+    user>
+      Sling each ready issue to the appropriate rig. Fire and forget.
+    ```bash
+    ISSUES=$(echo '{{load-convoy}}' | jq -c '.[]')
+    DISPATCHED=0
+    ERRORS=0
+
+    for issue in $ISSUES; do
+      ID=$(echo "$issue" | jq -r '.id')
+      RIG=$(echo "$ID" | sed 's/-.*//')
+      if gt sling "$ID" "$RIG" 2>/dev/null; then
+        DISPATCHED=$((DISPATCHED + 1))
+      else
+        ERRORS=$((ERRORS + 1))
+      fi
+    done
+
+    echo "{\"dispatched\": $DISPATCHED, \"errors\": $ERRORS}"
+    ```
+  #/
+
+  # report-results : script
+    - dispatch-work
+    user>
+      Send feeding report to Deacon.
+    ```bash
+    gt mail send deacon/ \
+      -s "Convoy fed: {{param.convoy}}" \
+      -m "Convoy {{param.convoy}} feeding complete.
+Dispatch results: {{dispatch-work}}
+Capacity: {{check-capacity}}"
+    ```
+  #/
+
+  # return-to-kennel : script
+    - report-results
+    user>
+      Signal DOG_DONE to Deacon.
+    ```bash
+    gt mail send deacon/ -s "DOG_DONE $(hostname)" -m "Task: convoy-feed
+Convoy: {{param.convoy}}
+Status: COMPLETE
+Ready for next assignment."
+    ```
+  #/
+
+  load-convoy -> check-capacity -> dispatch-work -> report-results
+  report-results -> return-to-kennel
+##/

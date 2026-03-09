@@ -1,0 +1,95 @@
+-- Dep Propagate: Cross-rig dependency resolution when an issue closes.
+-- Dog finds cross-rig dependents, updates blocked status, notifies Witnesses.
+
+## dep-propagate {
+  input param.resolved_issue : str required
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # load-resolved : script
+    @retry(max: 2)
+    user>
+      Load closed issue and identify cross-rig dependents.
+    ```bash
+    bd show {{param.resolved_issue}} --json
+    STATUS=$(bd show {{param.resolved_issue}} --json | jq -r '.status')
+    if [ "$STATUS" != "closed" ]; then
+      echo "ERROR: issue not closed (status=$STATUS)" >&2
+      exit 1
+    fi
+
+    SRC_RIG=$(echo "{{param.resolved_issue}}" | sed 's/-.*//')
+    bd show {{param.resolved_issue}} --json | jq --arg src "$SRC_RIG" '
+      .blocks // [] | map(select(startswith($src) | not))'
+    ```
+  #/
+
+  # update-blocked : script
+    - load-resolved
+    user>
+      Verify blocked status updated for each cross-rig dependent.
+    ```bash
+    DEPS=$(echo '{{load-resolved}}' | jq -r '.[]')
+    for dep in $DEPS; do
+      echo "--- Checking $dep ---"
+      bd blocked "$dep" --json
+      bd show "$dep" --json | jq '{id: .id, status: .status, blockers: .blocked_by}'
+    done
+    ```
+  #/
+
+  # notify-witnesses : llm
+    - update-blocked
+    system>
+      You draft concise cross-rig dependency notifications for Witness agents.
+    context>
+      Resolved issue: {{param.resolved_issue}}
+      Cross-rig dependents and their status: {{update-blocked}}
+    user>
+      Group dependents by rig prefix. For each rig, draft a mail body
+      listing unblocked issues and recommending next actions.
+    format> json
+      { "notifications": [{ "rig": str, "witness": str,
+        "subject": str, "body": str }] }
+  #/
+
+  # trigger-dispatch : script
+    - notify-witnesses
+    user>
+      Send notifications to Witnesses. Escalate high-priority unblocks to Mayor.
+    ```bash
+    echo '{{notify-witnesses}}' | jq -c '.notifications[]' | while read -r n; do
+      WITNESS=$(echo "$n" | jq -r '.witness')
+      SUBJECT=$(echo "$n" | jq -r '.subject')
+      BODY=$(echo "$n" | jq -r '.body')
+      gt mail send "$WITNESS" -s "$SUBJECT" -m "$BODY"
+    done
+
+    -- Escalate P0/P1 unblocks
+    echo '{{update-blocked}}' | jq -r '.[] | select(.priority <= 1) | .id' \
+      2>/dev/null | while read -r id; do
+      gt mail send mayor/ -s "High-priority unblocked: $id" \
+        -m "Cross-rig dep resolved: {{param.resolved_issue}} unblocked $id"
+    done
+    ```
+  #/
+
+  # return-to-kennel : script
+    - trigger-dispatch
+    user>
+      Signal DOG_DONE to Deacon.
+    ```bash
+    gt mail send deacon/ -s "DOG_DONE $(hostname)" -m "Task: dep-propagate
+Resolved: {{param.resolved_issue}}
+Cross-rig dependents: {{load-resolved}}
+Status: COMPLETE
+Ready for next assignment."
+    ```
+  #/
+
+  load-resolved -> update-blocked -> notify-witnesses -> trigger-dispatch
+  trigger-dispatch -> return-to-kennel
+##/

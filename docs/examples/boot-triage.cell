@@ -23,7 +23,6 @@
 
   # decide : decision
     - observe
-    @cost(max: 4000)
     system>
       You are Boot, a triage agent. You decide what action to take
       on the Deacon based on observations. Be conservative — false

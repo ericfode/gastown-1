@@ -1,0 +1,82 @@
+-- Dog Phantom DB: Detect and quarantine phantom databases in .dolt-data/.
+-- Phantom = has .dolt/ subdir but missing noms/manifest. Crashes Dolt on restart.
+
+## dog-phantom-db {
+  input param.data_dir : str default(".dolt-data")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # scan : script
+    @retry(max: 2)
+    user>
+      Scan .dolt-data/ for phantom databases (has .dolt/ but no noms/manifest).
+    ```bash
+    DATA_DIR="$HOME/gt/{{param.data_dir}}"
+    TOTAL=0
+    PHANTOMS=""
+    VALID=0
+
+    for dir in "$DATA_DIR"/*/; do
+      [ -d "$dir" ] || continue
+      TOTAL=$((TOTAL + 1))
+      NAME=$(basename "$dir")
+      if [ -d "$dir/.dolt" ] && [ ! -f "$dir/.dolt/noms/manifest" ]; then
+        PHANTOMS="$PHANTOMS $NAME"
+      else
+        VALID=$((VALID + 1))
+      fi
+    done
+
+    PHANTOM_COUNT=$(echo $PHANTOMS | wc -w | tr -d ' ')
+    echo "{\"total\": $TOTAL, \"phantoms\": $PHANTOM_COUNT, \"valid\": $VALID, \"names\": \"$(echo $PHANTOMS | xargs)\"}"
+    ```
+  #/
+
+  # quarantine : script
+    - scan
+    @retry(max: 1)
+    user>
+      Remove phantom dirs and escalate if any were found.
+    ```bash
+    DATA_DIR="$HOME/gt/{{param.data_dir}}"
+    NAMES=$(echo '{{scan}}' | jq -r '.names')
+    COUNT=$(echo '{{scan}}' | jq -r '.phantoms')
+
+    if [ "$COUNT" -eq 0 ]; then
+      echo "No phantoms found - nothing to quarantine."
+      exit 0
+    fi
+
+    QUARANTINED=0
+    for name in $NAMES; do
+      rm -rf "$DATA_DIR/$name"
+      QUARANTINED=$((QUARANTINED + 1))
+      echo "Quarantined: $name"
+    done
+
+    gt escalate -s HIGH "Dolt: quarantined $QUARANTINED phantom database(s): $NAMES"
+    echo "{\"quarantined\": $QUARANTINED}"
+    ```
+  #/
+
+  # report : script
+    - quarantine
+    user>
+      Report findings and signal DOG_DONE.
+    ```bash
+    echo "## Phantom DB Report"
+    echo "Scan: {{scan}}"
+    echo "Quarantine: {{quarantine}}"
+
+    gt mail send deacon/ -s "DOG_DONE: phantom-db" -m "Task: phantom-db-scan
+Scan: {{scan}}
+Quarantine: {{quarantine}}
+Status: COMPLETE"
+    ```
+  #/
+
+  scan -> quarantine -> report
+##/

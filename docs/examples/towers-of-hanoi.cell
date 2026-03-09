@@ -64,7 +64,6 @@
 
   # verify : llm
     - move-7
-    @cost(max: 2000)
     user>
       Verify final state: all 3 disks on peg {{param.target_peg}}.
       Tower intact. All moves were legal.

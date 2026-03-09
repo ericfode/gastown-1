@@ -1,0 +1,114 @@
+-- Polecat Lease: Witness-side lifecycle tracking of a single polecat.
+-- BOOT -> WORKING -> VERIFYING -> MERGE_REQUESTED -> DONE
+
+## polecat-lease {
+  input param.polecat : str required
+  input param.issue   : str required
+  input param.rig     : str required
+
+  # boot : script
+    @retry(max: 3)
+    user>
+      Verify polecat boots and begins work. Nudge if idle >60s.
+    ```bash
+    echo "--- Checking polecat session ---"
+    tmux capture-pane -t gt-{{param.rig}}-{{param.polecat}} -p | tail -20
+
+    ACTIVE=$(tmux capture-pane -t gt-{{param.rig}}-{{param.polecat}} -p \
+      | grep -cE '(gt prime|>|{{param.issue}})' || true)
+
+    if [ "$ACTIVE" -eq 0 ]; then
+      gt nudge {{param.rig}}/polecats/{{param.polecat}} \
+        "Begin work on {{param.issue}}."
+      sleep 30
+      tmux capture-pane -t gt-{{param.rig}}-{{param.polecat}} -p | tail -10
+    fi
+    echo "BOOT_OK"
+    ```
+  #/
+
+  # working : script
+    - boot
+    user>
+      Monitor polecat for completion signal (POLECAT_DONE or agent_state=done).
+    ```bash
+    echo "--- Monitoring {{param.polecat}} ---"
+    tmux capture-pane -t gt-{{param.rig}}-{{param.polecat}} -p | tail -30
+
+    -- Check for completion signals
+    DONE=$(gt mail list --to={{param.rig}}/witness --json 2>/dev/null \
+      | jq '[.[] | select(.subject | contains("POLECAT_DONE"))] | length')
+
+    if [ "$DONE" -gt 0 ]; then
+      echo "POLECAT_DONE received"
+    else
+      echo "Still working - checking git activity"
+      cd polecats/{{param.polecat}} 2>/dev/null && \
+        git log --oneline -5 2>/dev/null || echo "no commits yet"
+    fi
+    ```
+  #/
+
+  # verifying : script
+    - working
+    user>
+      Verify polecat work: clean git, branch pushed, issue closed.
+    ```bash
+    cd polecats/{{param.polecat}}
+
+    echo "--- Git status ---"
+    git status --porcelain
+    DIRTY=$(git status --porcelain | wc -l)
+
+    echo "--- Stash ---"
+    git stash list
+
+    echo "--- Unpushed commits ---"
+    BRANCH=$(git branch --show-current)
+    UNPUSHED=$(git log "origin/$BRANCH..HEAD" --oneline 2>/dev/null | wc -l)
+
+    echo "--- Issue status ---"
+    bd show {{param.issue}} --json | jq '.status'
+
+    if [ "$DIRTY" -gt 0 ] || [ "$UNPUSHED" -gt 0 ]; then
+      gt nudge --mode=queue {{param.rig}}/polecats/{{param.polecat}} \
+        "Verification failed: dirty=$DIRTY unpushed=$UNPUSHED. Please fix."
+      echo "VERIFY_FAIL"
+    else
+      echo "VERIFY_OK"
+    fi
+    ```
+  #/
+
+  # merge-requested : script
+    - verifying
+    user>
+      Send MERGE_READY to Refinery and wait for MERGED response.
+    ```bash
+    BRANCH=$(cd polecats/{{param.polecat}} && git branch --show-current)
+
+    gt mail send {{param.rig}}/refinery \
+      -s "MERGE_READY {{param.polecat}}" \
+      -m "Branch: $BRANCH
+Issue: {{param.issue}}
+Polecat: {{param.polecat}}
+Verified: clean git state, issue closed"
+
+    echo "MERGE_REQUESTED: $BRANCH"
+    ```
+  #/
+
+  # done : script
+    - merge-requested
+    user>
+      Kill polecat session, remove worktree, close lease.
+    ```bash
+    gt session kill {{param.rig}}/polecats/{{param.polecat}}
+    git worktree remove polecats/{{param.polecat}} --force 2>/dev/null || true
+    git branch -D polecat/{{param.polecat}} 2>/dev/null || true
+    echo "LEASE_CLOSED: {{param.polecat}}"
+    ```
+  #/
+
+  boot -> working -> verifying -> merge-requested -> done
+##/

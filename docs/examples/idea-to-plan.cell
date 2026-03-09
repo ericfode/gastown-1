@@ -11,7 +11,6 @@
   input param.context : str default("")
 
   # intake : llm
-    @cost(max: 8000)
     system>
       You are a product manager structuring vague ideas into PRDs.
     user>
@@ -48,7 +47,6 @@
   -- Human gate: agent presents questions, user answers
   # human-clarify : llm
     - prd-review
-    @cost(max: 4000)
     system>
       You are facilitating a conversation between the PRD review
       findings and the original requester.
@@ -81,7 +79,6 @@
   -- Human gate: approve or reject
   # human-approve : decision
     - plan-review
-    @cost(max: 4000)
     system>
       You are presenting an implementation plan for approval.
     context>

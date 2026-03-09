@@ -22,7 +22,6 @@
 
   # evaluate-1 : decision
     - interrogate-1
-    @cost(max: 2000)
     system>
       You are evaluating whether a session responded to a health check.
     context>
@@ -58,7 +57,6 @@
 
   # evaluate-2 : decision
     - interrogate-2
-    @cost(max: 2000)
     system>
       You are evaluating health check response (attempt 2 of 3).
     context>
@@ -86,7 +84,6 @@
 
   # evaluate-3 : decision
     - interrogate-3
-    @cost(max: 2000)
     system>
       You are evaluating health check response (final attempt).
     context>

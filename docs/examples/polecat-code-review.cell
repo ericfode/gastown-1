@@ -1,0 +1,192 @@
+-- Polecat Code Review — Cell translation of mol-polecat-code-review.formula.toml
+-- Sequential workflow: a polecat reviews code and files beads for findings.
+-- This is a workflow (not convoy) — steps run in sequence with dependencies.
+
+## polecat-code-review
+
+  input param.scope : str required
+  input param.issue : str required
+  input param.focus : str default("")
+  input param.rig : str required
+
+  -- Reusable persona fragment
+  prompt@ polecat-reviewer
+    You are a self-cleaning polecat performing a code review.
+    Scope: {{param.scope}}
+    Tracking issue: {{param.issue}}
+    You find and report issues — you do NOT fix them. File beads.
+    When done, you self-clean via gt done. Done means gone.
+
+  -- === Step 1: Load context ===
+
+  # load-context : script
+    ```sh
+    gt prime
+    bd prime
+    gt hook
+    bd show {{param.issue}}
+    ls -la {{param.scope}} 2>/dev/null || echo "scope is description, not path"
+    git log --oneline -10 -- {{param.scope}} 2>/dev/null || true
+    ```
+  #/
+
+  -- === Step 2: Survey code structure ===
+
+  # survey-code : llm
+    - load-context
+    system>
+      {{@polecat-reviewer}}
+      Your task: survey the code structure before detailed review.
+    user>
+      Get a high-level understanding of the code at {{param.scope}}.
+
+      Identify:
+      - Main types/structs and public functions
+      - Dependencies and imports
+      - Test coverage (if tests exist)
+      - Initial impressions: organization, patterns, risky areas
+
+      Build a mental map. Note areas that need closer inspection.
+    context> ?has(param.focus)
+      Focus area: {{param.focus}}
+    format> survey
+      {
+        structure_summary: str,
+        key_components: [str],
+        risky_areas: [str],
+        test_coverage: str
+      }
+  #/
+
+  -- === Step 3: Detailed review ===
+
+  # detailed-review : llm
+    - survey-code
+    system>
+      {{@polecat-reviewer}}
+      Your task: systematic detailed code review.
+    user>
+      Review the code at {{param.scope}} systematically.
+      Structure from survey: {{survey-code}}
+
+      Review checklist:
+      | Category | Look For |
+      |----------|----------|
+      | Correctness | Logic errors, off-by-one, nil handling, race conditions |
+      | Security | Injection, auth bypass, secrets in code, unsafe operations |
+      | Error handling | Swallowed errors, missing checks, unclear error messages |
+      | Performance | N+1 queries, unnecessary allocations, blocking calls |
+      | Maintainability | Dead code, unclear naming, missing comments |
+      | Testing | Untested paths, missing edge cases, flaky tests |
+
+      For each issue note: file, line, category, severity, description, suggested fix.
+      Do NOT fix issues yourself — just catalog them.
+    context> ?has(param.focus)
+      Focus especially on: {{param.focus}}
+    format> findings
+      {
+        issues: [{
+          file: str,
+          line: number,
+          category: "correctness" | "security" | "error_handling" | "performance" | "maintainability" | "testing",
+          severity: "P0" | "P1" | "P2" | "P3",
+          description: str,
+          suggested_fix: str
+        }]
+      }
+  #/
+
+  -- === Step 4: Prioritize findings ===
+
+  # prioritize : llm
+    - detailed-review
+    system>
+      {{@polecat-reviewer}}
+      Your task: prioritize and deduplicate findings.
+    user>
+      Organize these findings by priority:
+      {{detailed-review}}
+
+      Priority levels:
+      - P0: Security vulnerability, data loss risk — mail Witness immediately
+      - P1: Bug affecting users, broken functionality — file as bug, high priority
+      - P2: Code quality issue, potential future bug — file as task
+      - P3: Improvement opportunity, nice-to-have — file as task, low priority
+
+      Deduplicate overlapping findings. Group by priority then category.
+    format> prioritized
+      {
+        p0: [{ title: str, file: str, description: str }],
+        p1: [{ title: str, file: str, description: str }],
+        p2: [{ title: str, file: str, description: str }],
+        p3: [{ title: str, file: str, description: str }],
+        total_count: number
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["p0", "p1", "p2", "p3", "total_count"]);
+    assert output.total_count >= 0;
+    ```
+  #/
+
+  -- === Step 5: File beads ===
+
+  # file-beads : script
+    - prioritize
+    ```sh
+    -- File P0/P1 as bugs, P2/P3 as tasks
+    -- This is a template; the polecat fills in from prioritize output
+    echo '{{prioritize}}' | jq -r '.p0[] + .p1[] | "bd create --type=bug --priority=1 --title=\"\(.title)\" --description=\"Found in code review of {{param.scope}}. File: \(.file). \(.description)\""' | sh
+    echo '{{prioritize}}' | jq -r '.p2[] | "bd create --type=task --priority=2 --title=\"\(.title)\" --description=\"Found in code review of {{param.scope}}. File: \(.file). \(.description)\""' | sh
+    echo '{{prioritize}}' | jq -r '.p3[] | "bd create --type=task --priority=3 --title=\"\(.title)\" --description=\"Found in code review of {{param.scope}}. File: \(.file). \(.description)\""' | sh
+    ```
+  #/
+
+  -- === Step 6: Summarize and update tracking issue ===
+
+  # summarize : llm
+    - file-beads
+    - prioritize
+    system>
+      {{@polecat-reviewer}}
+      Your task: write a concise review summary for the tracking issue.
+    user>
+      Write a summary of this code review for the tracking issue.
+      Findings: {{prioritize}}
+
+      Include:
+      - Scope reviewed
+      - Finding counts by priority (P0/P1/P2/P3)
+      - Overall assessment (healthy, needs attention, significant issues)
+      - List of bead IDs filed
+    format> summary
+      {
+        scope: str,
+        p0_count: number,
+        p1_count: number,
+        p2_count: number,
+        p3_count: number,
+        assessment: "healthy" | "needs_attention" | "significant_issues",
+        bead_ids: [str],
+        narrative: str
+      }
+  #/
+
+  -- === Step 7: Self-clean ===
+
+  # complete : script
+    - summarize
+    ```sh
+    bd update {{param.issue}} --notes "{{summarize.narrative}}"
+    bd sync
+    gt done
+    ```
+  #/
+
+  -- Wiring: sequential workflow
+  load-context -> survey-code -> detailed-review -> prioritize -> file-beads -> summarize -> complete
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/

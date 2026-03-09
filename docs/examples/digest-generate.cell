@@ -1,0 +1,111 @@
+-- Digest Generate: Daily/weekly digest of Gas Town activity for Mayor.
+-- Dog collects multi-rig data, LLM synthesizes, archives as bead.
+
+## digest-generate {
+  input param.period : str default("daily")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # determine-period : script
+    user>
+      Calculate time range for digest based on period type.
+    ```bash
+    case "{{param.period}}" in
+      daily)
+        SINCE=$(date -d "yesterday 00:00" +%Y-%m-%dT%H:%M:%S 2>/dev/null \
+             || date -v-1d +%Y-%m-%dT00:00:00)
+        UNTIL=$(date +%Y-%m-%dT00:00:00)
+        ;;
+      weekly)
+        SINCE=$(date -d "last monday" +%Y-%m-%dT%H:%M:%S 2>/dev/null \
+             || date -v-monday +%Y-%m-%dT00:00:00)
+        UNTIL=$(date +%Y-%m-%dT00:00:00)
+        ;;
+      *)
+        echo "ERROR: unknown period {{param.period}}" >&2; exit 1 ;;
+    esac
+    echo "{\"since\": \"$SINCE\", \"until\": \"$UNTIL\", \"period\": \"{{param.period}}\"}"
+    ```
+  #/
+
+  # collect-rig-data : script
+    - determine-period
+    @retry(max: 2)
+    user>
+      Gather issues, agent activity, merges, and incidents from all rigs.
+    ```bash
+    SINCE=$(echo '{{determine-period}}' | jq -r '.since')
+    UNTIL=$(echo '{{determine-period}}' | jq -r '.until')
+
+    echo "--- Issues created ---"
+    bd list --created-after="$SINCE" --created-before="$UNTIL" --json
+
+    echo "--- Issues closed ---"
+    bd list --status=closed --updated-after="$SINCE" --json
+
+    echo "--- Activity feed ---"
+    gt feed --since="$SINCE" --json 2>/dev/null || echo "[]"
+
+    echo "--- Rigs ---"
+    for rig in $(gt rigs 2>/dev/null); do
+      echo "=== $rig ==="
+      gt polecats "$rig" --json 2>/dev/null || echo "[]"
+    done
+    ```
+  #/
+
+  # generate-digest : llm
+    - collect-rig-data
+    - determine-period
+    @retry(max: 2)
+    system>
+      You produce concise operational digests for the Gas Town Mayor.
+      Focus on actionable information: completions, incidents, trends.
+    context>
+      Period: {{determine-period}}
+      Raw data: {{collect-rig-data}}
+    user>
+      Generate a digest covering:
+      - Summary stats (filed, closed, net change, by type and rig)
+      - Highlights (completions, incidents, trends)
+      - Agent health (polecats spawned/retired, avg duration)
+    format> json
+      { "date": str, "summary_md": str,
+        "filed": number, "closed": number, "net": number }
+  #/
+
+  # send-digest : script
+    - generate-digest
+    user>
+      Send digest to Mayor, archive as bead, sync.
+    ```bash
+    DATE=$(echo '{{generate-digest}}' | jq -r '.date')
+    BODY=$(echo '{{generate-digest}}' | jq -r '.summary_md')
+
+    gt mail send mayor/ -s "Gas Town Digest: $DATE" -m "$BODY"
+
+    bd create --title="Digest: $DATE" --type=task \
+      --description="$BODY" --json
+    bd sync
+    ```
+  #/
+
+  # return-to-kennel : script
+    - send-digest
+    user>
+      Signal DOG_DONE to Deacon.
+    ```bash
+    gt mail send deacon/ -s "DOG_DONE $(hostname)" -m "Task: digest-generate
+Period: {{param.period}}
+Range: {{determine-period}}
+Status: COMPLETE
+Ready for next assignment."
+    ```
+  #/
+
+  determine-period -> collect-rig-data -> generate-digest -> send-digest
+  send-digest -> return-to-kennel
+##/

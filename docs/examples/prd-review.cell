@@ -1,0 +1,266 @@
+-- PRD Review Convoy — Cell translation of mol-prd-review.formula.toml
+-- 6 parallel review legs examining a PRD from different perspectives,
+-- then a synthesis cell combining findings into prioritized questions.
+
+## prd-review
+
+  input param.problem : str required
+  input param.context : str default("")
+
+  -- Reusable persona fragment
+  prompt@ prd-analyst
+    You are a specialized analyst participating in a parallel PRD review convoy.
+    Problem / Feature: {{param.problem}}
+    Be specific. Flag unknowns explicitly. Your job is to surface what's missing
+    or unclear — not to fill in the gaps yourself.
+
+  -- === Review legs (parallel, no deps between them) ===
+
+  # requirements : llm
+    system>
+      {{@prd-analyst}}
+      Your dimension: success criteria and acceptance conditions.
+    user>
+      Analyze whether the requirements are complete enough to build from.
+
+      Look for:
+      - Missing success criteria: how will we know this is done?
+      - Undefined acceptance conditions: what does "working" mean?
+      - Unmeasured outcomes: are there metrics or thresholds?
+      - Missing non-functional requirements: performance, scale, reliability
+      - No definition of failure modes or error states
+      - Happy path only: what happens when things go wrong?
+      - Missing rollback / undo / recovery requirements
+      - No mention of monitoring, alerting, or observability
+
+      Can someone write a test from this PRD? If not, what's missing?
+    context> ?has(param.context)
+      Additional context: {{param.context}}
+    format> analysis
+      {
+        summary: str,
+        critical_gaps: [{ finding: str, why_it_matters: str, question: str }],
+        important: [str],
+        observations: [str],
+        confidence: "high" | "medium" | "low"
+      }
+  #/
+
+  # gaps : llm
+    system>
+      {{@prd-analyst}}
+      Your dimension: what hasn't been thought through yet.
+    user>
+      Identify requirements that are completely absent from the PRD.
+
+      Look for:
+      - Authentication / authorization: who can do this?
+      - Multi-tenancy: does this work for all tenant types?
+      - Data migration: what happens to existing data?
+      - Backwards compatibility: does this break anything existing?
+      - Edge cases with empty / null / zero states
+      - Concurrent access: what if two users do this simultaneously?
+      - Rate limiting and abuse prevention
+      - Audit logging and compliance requirements
+      - Internationalization / localization needs
+      - Admin tooling: how will support teams debug issues?
+      - Deprecation / cleanup: how does old behavior get removed?
+
+      What completely unaddressed scenarios could cause a production incident?
+    context> ?has(param.context)
+      Additional context: {{param.context}}
+    format> analysis
+      {
+        summary: str,
+        critical_gaps: [{ finding: str, why_it_matters: str, question: str }],
+        important: [str],
+        observations: [str],
+        confidence: "high" | "medium" | "low"
+      }
+  #/
+
+  # ambiguity : llm
+    system>
+      {{@prd-analyst}}
+      Your dimension: what's unclear, contradictory, or underspecified.
+    user>
+      Find statements in the PRD that are ambiguous or open to multiple
+      interpretations.
+
+      Look for:
+      - Vague language: "fast", "simple", "reasonable", "appropriate"
+      - Undefined terms: domain concepts used without definition
+      - Contradictions: two requirements that can't both be true
+      - Implicit assumptions: things assumed true that might not be
+      - Conditional requirements without defined conditions
+      - Scope boundaries stated unclearly: "similar to X" without defining similarity
+      - "Should" vs "must" vs "could": what's actually required vs nice-to-have?
+      - Undefined ordering: when multiple things need to happen, what order?
+
+      Which sentences could reasonably be interpreted two different ways?
+      What would two engineers disagree on when implementing this?
+    context> ?has(param.context)
+      Additional context: {{param.context}}
+    format> analysis
+      {
+        summary: str,
+        critical_gaps: [{ finding: str, why_it_matters: str, question: str }],
+        important: [str],
+        observations: [str],
+        confidence: "high" | "medium" | "low"
+      }
+  #/
+
+  # feasibility : llm
+    system>
+      {{@prd-analyst}}
+      Your dimension: is this buildable? What are the hard problems?
+    user>
+      Assess the technical feasibility and identify hard engineering challenges.
+
+      Look for:
+      - Features that assume capabilities the system doesn't have
+      - Third-party dependencies that may not support this use case
+      - Performance requirements that may be fundamentally hard to meet
+      - Consistency guarantees that conflict with the distributed architecture
+      - Real-time requirements that require architectural changes
+      - Privacy / security requirements with significant implementation cost
+      - Scale requirements that would require substantial infrastructure work
+      - Implicit coupling: does this require changing things the PRD doesn't mention?
+      - Missing prerequisite work: what has to be built first?
+
+      What's the hardest technical problem? What would double the effort
+      if discovered mid-build?
+    context> ?has(param.context)
+      Additional context: {{param.context}}
+    format> analysis
+      {
+        summary: str,
+        critical_gaps: [{ finding: str, why_it_matters: str, question: str }],
+        important: [str],
+        observations: [str],
+        confidence: "high" | "medium" | "low"
+      }
+  #/
+
+  # scope : llm
+    system>
+      {{@prd-analyst}}
+      Your dimension: what's in/out and where scope creep will happen.
+    user>
+      Analyze scope boundaries and identify scope creep risk.
+
+      Look for:
+      - Missing explicit out-of-scope statements
+      - Features that will inevitably be asked for given what's being built
+      - Overlap with existing features that will cause confusion
+      - Minimum viable definition: what's the smallest version that delivers value?
+      - Requirements that are really phase 2 in disguise
+      - Dependencies on other teams or systems that aren't scoped
+      - "While we're in there" refactors that aren't actually required
+      - Unclear prioritization between requirements if tradeoffs arise
+      - Missing phasing: should this be incremental or big bang?
+
+      What's the MVP? What could be cut without losing core value?
+    context> ?has(param.context)
+      Additional context: {{param.context}}
+    format> analysis
+      {
+        summary: str,
+        critical_gaps: [{ finding: str, why_it_matters: str, question: str }],
+        important: [str],
+        observations: [str],
+        confidence: "high" | "medium" | "low"
+      }
+  #/
+
+  # stakeholders : llm
+    system>
+      {{@prd-analyst}}
+      Your dimension: who's affected and whether needs conflict.
+    user>
+      Identify all affected stakeholders and assess whether their needs conflict.
+
+      Look for:
+      - Unstated users: are there actors the PRD doesn't mention?
+      - Operator / admin perspective: what do ops / support teams need?
+      - Developer experience: will this make other engineers' lives harder?
+      - Security team requirements not mentioned
+      - Compliance / legal requirements not mentioned
+      - Third-party integrators who will be affected
+      - Conflicting user needs: what's good for user A may hurt user B
+      - Internal team dependencies: who else needs to be involved?
+      - Launch coordination: who needs to be notified at launch?
+
+      Who is NOT mentioned in this PRD who will care about it?
+    context> ?has(param.context)
+      Additional context: {{param.context}}
+    format> analysis
+      {
+        summary: str,
+        critical_gaps: [{ finding: str, why_it_matters: str, question: str }],
+        important: [str],
+        observations: [str],
+        confidence: "high" | "medium" | "low"
+      }
+  #/
+
+  -- === Synthesis (depends on all 6 legs) ===
+
+  # synthesis : llm
+    - requirements
+    - gaps
+    - ambiguity
+    - feasibility
+    - scope
+    - stakeholders
+    @model(name: "claude-sonnet-4-6")
+    system>
+      You are a senior analyst synthesizing a convoy PRD review.
+      Identify overlapping findings across legs (higher-confidence gaps).
+      Deduplicate, prioritize, group into must-answer vs important-but-not-blocking.
+    user>
+      Synthesize these 6 dimension analyses into a consolidated PRD review:
+      each> leg in {{synthesis.*}}
+        ## {{leg}}
+
+      Structure:
+      1. Executive summary (2-3 sentences: overall PRD health, biggest risks)
+      2. Before You Build: critical questions that must be answered first
+      3. Important but non-blocking items
+      4. Observations and suggestions
+      5. Confidence assessment per dimension (H/M/L)
+      6. Next steps
+    format> prd_review
+      {
+        executive_summary: str,
+        critical_questions: [{
+          category: str,
+          question: str,
+          why_it_matters: str,
+          found_by: [str],
+          suggested_answers: [str]
+        }],
+        important_non_blocking: [str],
+        observations: [str],
+        confidence: {
+          requirements: "high" | "medium" | "low",
+          feasibility: "high" | "medium" | "low",
+          scope: "high" | "medium" | "low",
+          ambiguity: "high" | "medium" | "low",
+          overall: "high" | "medium" | "low"
+        }
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["executive_summary", "critical_questions", "confidence"]);
+    assert len(output.executive_summary) >= 50;
+    assert typeof(output.critical_questions) == "array";
+    reject if output.executive_summary == "";
+    ```
+  #/
+
+  squash> trigger: on_complete template: review include_metrics: true
+
+##/

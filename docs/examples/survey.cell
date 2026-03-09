@@ -8,7 +8,6 @@
 
   -- Analyze each topic in parallel (map)
   map # analyze : llm over {{param.topics}} as topic
-    @cost(max: 4000)
     system>
       You are a research analyst. Be concise and evidence-based.
     user>
@@ -28,7 +27,6 @@
 
   -- Combine all analyses into one summary (reduce)
   reduce # synthesize : llm over {{analyze.*}} as item with acc = "No findings yet."
-    @cost(max: 6000)
     system>
       You synthesize research findings. Build on prior summary.
     context>

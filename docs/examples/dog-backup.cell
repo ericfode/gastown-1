@@ -59,7 +59,6 @@
   # report : llm
     - sync
     - offsite
-    @cost(max: 2000)
     system>
       You are a Dog reporting to the Deacon. Be terse.
     context>

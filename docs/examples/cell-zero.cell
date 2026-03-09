@@ -38,7 +38,6 @@
 
   # analyze : llm
     - observe
-    @cost(max: 8000)
     system>
       You are the distillation analyzer. You examine cell execution
       history and identify candidates for crystallization.
@@ -91,7 +90,6 @@
   -- Phase 2: Propose — generate distillation blocks
 
   map # propose : llm over {{analyze.candidates}} as candidate
-    @cost(max: 6000)
     system>
       You are generating a distill> block for a Cell cell.
       The distill> block captures the input→output mapping
@@ -125,7 +123,6 @@
   -- Phase 3: Validate — test distilled cells against live execution
 
   map # validate : llm over {{propose.*}} as proposal
-    @cost(max: 4000)
     system>
       You are validating a proposed distillation.
       Compare the distilled output against what the LLM would produce.
@@ -156,7 +153,6 @@
 
   # freeze : llm
     - validate
-    @cost(max: 8000)
     system>
       You are applying validated distillations to the target molecule.
       For each validated cell, rewrite its definition:
@@ -185,7 +181,6 @@
   # report : llm
     - freeze
     - analyze
-    @cost(max: 4000)
     system>
       You are writing the distillation report. Be precise.
     user>

@@ -1,0 +1,83 @@
+-- Convoy Cleanup: Archive completed convoys and notify overseer.
+-- Dog receives convoy ID via hook, generates summary, archives, notifies Mayor.
+
+## convoy-cleanup {
+  input param.convoy : str required
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # load-convoy : script
+    @retry(max: 2)
+    user>
+      Load convoy and verify it is complete (all tracked issues closed).
+    ```bash
+    gt hook
+    bd show {{param.convoy}} --json
+    BLOCKED=$(bd blocked {{param.convoy}} --json 2>/dev/null || echo "[]")
+    echo "$BLOCKED" | jq 'if length == 0 then "VERIFIED" else "NOT_READY" end'
+    ```
+  #/
+
+  # generate-summary : llm
+    - load-convoy
+    @retry(max: 2)
+    system>
+      You summarize completed convoy work for overseer reporting.
+    context>
+      Convoy details: {{load-convoy}}
+    user>
+      Generate a concise convoy summary including:
+      - Duration (start to finish)
+      - Issues by type (task, bug, feature)
+      - Contributors (unique assignees)
+      - Key outcomes
+    format> json
+      { "duration": str, "issue_count": number,
+        "contributors": [str], "summary_md": str }
+  #/
+
+  # archive-convoy : script
+    - generate-summary
+    user>
+      Close the convoy bead and sync.
+    ```bash
+    bd close {{param.convoy}} --reason="Convoy complete"
+    bd sync
+    bd show {{param.convoy}} --json | jq '.status'
+    ```
+  #/
+
+  # notify-overseer : script
+    - archive-convoy
+    - generate-summary
+    user>
+      Send completion mail to Mayor and verify activity feed.
+    ```bash
+    gt mail send mayor/ \
+      -s "Convoy complete: {{param.convoy}}" \
+      -m "Convoy {{param.convoy}} archived.
+
+{{generate-summary}}"
+
+    gt feed --since 5m
+    ```
+  #/
+
+  # return-to-kennel : script
+    - notify-overseer
+    user>
+      Signal DOG_DONE to Deacon.
+    ```bash
+    gt mail send deacon/ -s "DOG_DONE $(hostname)" -m "Task: convoy-cleanup
+Convoy: {{param.convoy}}
+Status: COMPLETE
+Ready for next assignment."
+    ```
+  #/
+
+  load-convoy -> generate-summary -> archive-convoy -> notify-overseer
+  notify-overseer -> return-to-kennel
+##/

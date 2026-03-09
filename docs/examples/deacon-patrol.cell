@@ -24,7 +24,6 @@
 
   # inbox-check : llm
     - heartbeat
-    @cost(max: 8000)
     system>
       You are the Deacon handling callbacks from agents.
       Clean up old wisps, then process inbox messages.
@@ -55,7 +54,6 @@
 
   # test-pollution-cleanup : script
     - orphan-process-cleanup
-    @cost(max: 4000)
     ```bash
     gt dolt status 2>&1
     # Check for orphan test databases
@@ -68,7 +66,6 @@
 
   # gate-evaluation : llm
     - test-pollution-cleanup
-    @cost(max: 4000)
     system>
       You evaluate molecules waiting at gates (approval, retry, timeout).
     user>
@@ -125,7 +122,6 @@
 
   # health-scan : llm
     - heartbeat-mid
-    @cost(max: 6000)
     system>
       You are scanning rig health: sessions, heartbeats, activity.
       Check each rig's witness, refinery, and polecats.
@@ -216,7 +212,6 @@
 
   # compact-report : llm
     - wisp-compact
-    @cost(max: 2000)
     system>
       You are summarizing compaction results. Be terse.
     user>
@@ -236,7 +231,6 @@
 
   # patrol-digest : llm
     - costs-digest
-    @cost(max: 4000)
     system>
       You are writing a patrol cycle digest. One paragraph max.
     user>
@@ -266,7 +260,6 @@
 
   # context-check : decision
     - patrol-cleanup
-    @cost(max: 2000)
     system>
       You are checking whether the Deacon should loop or exit.
     user>

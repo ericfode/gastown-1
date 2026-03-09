@@ -8,7 +8,6 @@
   input param.assignee : str default("self")
 
   # design : llm
-    @cost(max: 8000)
     system>
       You are a senior software engineer. Design before you code.
     user>
@@ -25,7 +24,6 @@
 
   # implement : llm
     - design
-    @cost(max: 16000)
     system>
       You are a senior software engineer. Follow the design. Keep it simple.
     context>
@@ -40,7 +38,6 @@
 
   # review : llm
     - implement
-    @cost(max: 8000)
     system>
       You are a code reviewer. Be thorough but fair.
     context>
@@ -78,7 +75,6 @@
 
   # submit : llm
     - test
-    @cost(max: 4000)
     system>
       You are finalizing work for merge.
     user>

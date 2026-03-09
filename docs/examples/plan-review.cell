@@ -1,0 +1,230 @@
+-- Plan Review Convoy — Cell translation of mol-plan-review.formula.toml
+-- 5 parallel review legs examining an implementation plan, then a synthesis
+-- cell producing a go/no-go recommendation.
+
+## plan-review
+
+  input param.plan : str required
+  input param.problem : str required
+  input param.prd_review : str default("")
+
+  -- Reusable persona fragment
+  prompt@ plan-reviewer
+    You are a specialized reviewer participating in a parallel plan review convoy.
+    Plan under review: {{param.plan}}
+    Original problem: {{param.problem}}
+    Be specific. Reference plan sections or bead IDs where possible.
+
+  -- === Review legs (parallel, no deps between them) ===
+
+  # completeness : llm
+    system>
+      {{@plan-reviewer}}
+      Your dimension: are all requirements covered? What's missing?
+    context> ?has(param.prd_review)
+      PRD review context (from earlier analysis): {{param.prd_review}}
+    user>
+      Verify that the implementation plan covers all stated requirements.
+
+      Look for:
+      - Requirements from the PRD with no corresponding plan step
+      - Implied work that isn't explicitly planned (migrations, tests, docs, rollout)
+      - Missing infrastructure or setup steps
+      - No monitoring / alerting plan
+      - No rollback plan for risky changes
+      - Missing error handling or graceful degradation steps
+      - Tests not mentioned as part of plan
+      - Post-launch validation not planned
+      - Clean-up or deprecation work not included
+
+      Which PRD requirement has no plan step covering it?
+      What will be obviously missing when the last bead is closed?
+    format> review
+      {
+        verdict: "pass" | "pass_with_notes" | "fail",
+        must_fix: [{ issue: str, why_it_matters: str, resolution: str }],
+        should_fix: [str],
+        observations: [str]
+      }
+  #/
+
+  # sequencing : llm
+    system>
+      {{@plan-reviewer}}
+      Your dimension: is the order right? Are dependencies correct?
+    context> ?has(param.prd_review)
+      PRD review context (from earlier analysis): {{param.prd_review}}
+    user>
+      Verify that the plan's sequencing and dependencies are sound.
+
+      Look for:
+      - Steps that depend on things not yet built at that point
+      - Schema migrations that need to happen before code changes
+      - API changes needing coordination between frontend and backend
+      - Steps that should be parallelizable but are listed sequentially
+      - Steps listed in parallel that actually have a dependency
+      - Missing blocking relationships between beads
+      - Infrastructure that needs to exist before application code runs
+      - Feature flag requirements not sequenced before the feature itself
+
+      Can every step start immediately when its dependencies are done?
+      Is there a circular dependency hiding somewhere?
+    format> review
+      {
+        verdict: "pass" | "pass_with_notes" | "fail",
+        must_fix: [{ issue: str, why_it_matters: str, resolution: str }],
+        should_fix: [str],
+        observations: [str]
+      }
+  #/
+
+  # risk : llm
+    system>
+      {{@plan-reviewer}}
+      Your dimension: what could go wrong? What are the unknowns?
+    context> ?has(param.prd_review)
+      PRD review context (from earlier analysis): {{param.prd_review}}
+    user>
+      Identify implementation risks, unknowns, and potential failure modes.
+
+      Look for:
+      - Steps with high uncertainty or novel technology
+      - External dependencies with reliability risk
+      - Steps that will be hard to test or verify
+      - Changes to shared infrastructure affecting other teams
+      - Database migrations that are difficult to reverse
+      - Breaking changes to existing integrations or APIs
+      - Performance risks with no load testing plan
+      - Security surface area expansion without security review
+      - "We'll figure it out" language or vague descriptions
+      - Single points of failure in the implementation sequence
+
+      What's the highest-risk step? Does the plan de-risk it early?
+      What assumption is most likely to be wrong?
+    format> review
+      {
+        verdict: "pass" | "pass_with_notes" | "fail",
+        must_fix: [{ issue: str, why_it_matters: str, resolution: str }],
+        should_fix: [str],
+        observations: [str]
+      }
+  #/
+
+  # scope-creep : llm
+    system>
+      {{@plan-reviewer}}
+      Your dimension: is there unnecessary work? What can be cut?
+    context> ?has(param.prd_review)
+      PRD review context (from earlier analysis): {{param.prd_review}}
+    user>
+      Identify scope creep and opportunities to simplify.
+
+      Look for:
+      - Steps that aren't necessary for the MVP
+      - Gold-plating: doing it "properly" when "good enough" would ship faster
+      - Refactors bundled in that aren't required for the feature
+      - Future-proofing that adds complexity without current benefit
+      - Steps solving problems not mentioned in the original PRD
+      - Premature abstraction or generalization
+      - "While we're in there" cleanup that isn't blocking
+      - Testing coverage beyond what's proportionate to risk
+
+      What's the minimum set of steps for a working MVP?
+      Which steps could be filed as follow-up beads without blocking launch?
+    format> review
+      {
+        verdict: "pass" | "pass_with_notes" | "fail",
+        must_fix: [{ issue: str, why_it_matters: str, resolution: str }],
+        should_fix: [str],
+        observations: [str]
+      }
+  #/
+
+  # testability : llm
+    system>
+      {{@plan-reviewer}}
+      Your dimension: can we verify the plan worked?
+    context> ?has(param.prd_review)
+      PRD review context (from earlier analysis): {{param.prd_review}}
+    user>
+      Assess whether the implementation will be verifiable once complete.
+
+      Look for:
+      - Steps with no associated test plan
+      - Features that are hard to test in isolation
+      - End-to-end flows with no integration test coverage planned
+      - No definition of what "passing" looks like for each step
+      - Missing smoke tests or validation steps post-deployment
+      - Metrics or observability not planned
+      - Manual verification steps that should be automated
+      - Tests that can only run in production (not in dev/staging)
+      - No regression test plan for existing behavior
+
+      After all beads are closed, how do we know the feature works end-to-end?
+      What's the first signal that something went wrong in production?
+    format> review
+      {
+        verdict: "pass" | "pass_with_notes" | "fail",
+        must_fix: [{ issue: str, why_it_matters: str, resolution: str }],
+        should_fix: [str],
+        observations: [str]
+      }
+  #/
+
+  -- === Synthesis (depends on all 5 legs) ===
+
+  # synthesis : llm
+    - completeness
+    - sequencing
+    - risk
+    - scope-creep
+    - testability
+    @model(name: "claude-sonnet-4-6")
+    system>
+      You are a senior architect synthesizing a convoy plan review.
+      Aggregate verdicts. Consolidate must-fix items. Deduplicate cross-leg findings.
+      Determine overall go/no-go recommendation.
+    user>
+      Synthesize these 5 dimension reviews into a consolidated plan verdict:
+      each> leg in {{synthesis.*}}
+        ## {{leg}}
+
+      Structure:
+      1. Overall verdict: GO / GO WITH FIXES / NO-GO (with rationale)
+      2. Leg verdicts table (dimension, verdict, key finding)
+      3. Must fix before creating beads (blocking issues)
+      4. Should fix (important but not blocking)
+      5. Observations
+      6. Next steps
+    format> plan_review
+      {
+        overall_verdict: "go" | "go_with_fixes" | "no_go",
+        rationale: str,
+        leg_verdicts: [{
+          dimension: str,
+          verdict: "pass" | "pass_with_notes" | "fail",
+          key_finding: str
+        }],
+        must_fix: [{
+          title: str,
+          found_by: [str],
+          problem: str,
+          required_fix: str
+        }],
+        should_fix: [str],
+        observations: [str]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["overall_verdict", "rationale", "leg_verdicts"]);
+    assert output.overall_verdict in ["go", "go_with_fixes", "no_go"];
+    assert len(output.rationale) >= 20;
+    assert len(output.leg_verdicts) == 5;
+    reject if output.rationale == "";
+    ```
+  #/
+
+  squash> trigger: on_complete template: review include_metrics: true
+
+##/

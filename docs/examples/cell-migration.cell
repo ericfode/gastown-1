@@ -35,7 +35,6 @@
 
   # classify : llm
     - inventory
-    @cost(max: 8000)
     system>
       You are classifying formulas by the Cell features needed to express them.
     user>
@@ -60,7 +59,6 @@
   -- Phase 2: Translate — express each formula in Cell
 
   map # translate : llm over {{classify.t1}} as formula
-    @cost(max: 10000)
     @retry(max: 3)
     system>
       You are a Cell language author. You write Cell programs.
@@ -89,7 +87,6 @@
 
   # validate : llm
     - translate
-    @cost(max: 16000)
     system>
       You are a Cell parser (human-simulated).
       Parse each translation against the EBNF grammar.
@@ -131,7 +128,6 @@
   # discover-gaps : llm
     - validate
     - translate
-    @cost(max: 12000)
     system>
       You are a language designer analyzing expressiveness gaps.
     user>
@@ -168,7 +164,6 @@
 
   meta # evolve : llm
     - discover-gaps
-    @cost(max: 16000)
     system>
       You are a metacircular Cell author.
       You emit Cell source code as your output.
@@ -207,7 +202,6 @@
     - validate
     - discover-gaps
     - evolve
-    @cost(max: 8000)
     system>
       You are writing the proof-of-concept report.
       Be honest. Failures are as valuable as successes.
