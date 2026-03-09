@@ -1,0 +1,194 @@
+-- Gas Town release workflow — version bump to verified release.
+-- Orchestrates: workspace check, preflight, docs, bump, git, install, daemons.
+
+## gastown-release
+
+  input param.version : str default("")
+
+  # preflight-workspaces : script
+    ```bash
+    for dir in $GT_ROOT/gastown/crew/* $GT_ROOT/gastown/mayor; do
+      if [ -d "$dir" ]; then
+        echo "=== Checking $dir ==="
+        cd "$dir" 2>/dev/null || continue
+        if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+          echo "UNCOMMITTED CHANGES"
+          git status --short
+        fi
+        stash_count=$(git stash list 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$stash_count" -gt 0 ]; then
+          echo "HAS $stash_count STASH(ES)"
+        fi
+        current_branch=$(git branch --show-current 2>/dev/null)
+        if [ -n "$current_branch" ] && [ "$current_branch" != "main" ]; then
+          echo "ON BRANCH: $current_branch (not main)"
+        fi
+      fi
+    done
+    echo "workspace-check=done"
+    ```
+
+    ```oracle
+    assert output contains "workspace-check=done";
+    ```
+  #/
+
+  # preflight-git : script
+    - preflight-workspaces
+    ```bash
+    git status
+    echo "git-status=checked"
+    ```
+
+    ```oracle
+    assert output contains "git-status=checked";
+    ```
+  #/
+
+  # preflight-pull : script
+    - preflight-git
+    ```bash
+    git pull --rebase && echo "pull=ok" || echo "pull=failed"
+    ```
+
+    ```oracle
+    assert output contains "pull=ok";
+    ```
+  #/
+
+  # review-changes : script
+    - preflight-pull
+    ```bash
+    git log $(git describe --tags --abbrev=0)..HEAD --oneline
+    echo "review=done"
+    ```
+
+    ```oracle
+    assert output contains "review=done";
+    ```
+  #/
+
+  # update-changelog : llm
+    - review-changes
+    system>
+      You are a release engineer updating CHANGELOG.md for Gas Town.
+    context>
+      Changes since last release: {{review-changes}}
+      Target version: {{param.version}}
+    user>
+      Write the [Unreleased] section for {{param.version}} in Keep a Changelog format.
+      Sections: Added, Changed, Fixed, Deprecated, Removed.
+    format> changelog
+      Markdown changelog entries.
+  #/
+
+  # update-info-go : llm
+    - update-changelog
+    system>
+      You are a release engineer updating info.go versionChanges.
+    context>
+      Changelog: {{update-changelog}}
+      Version: {{param.version}}
+    user>
+      Add entry to versionChanges in internal/cmd/info.go.
+      Prefix with NEW:, CHANGED:, FIX:, or DEPRECATED:.
+      Focus on agent-relevant and workflow-impacting changes.
+    format> code
+      Go struct entry for versionChanges.
+  #/
+
+  # run-bump-script : script
+    - update-info-go
+    ```bash
+    ./scripts/bump-version.sh {{param.version}} && echo "bump=ok"
+    ```
+
+    ```oracle
+    assert output contains "bump=ok";
+    ```
+  #/
+
+  # verify-versions : script
+    - run-bump-script
+    ```bash
+    grep 'Version = ' internal/cmd/version.go
+    grep '"version"' npm-package/package.json | head -1
+    echo "verify=done"
+    ```
+
+    ```oracle
+    assert output contains "{{param.version}}";
+    assert output contains "verify=done";
+    ```
+  #/
+
+  # commit-release : script
+    - verify-versions
+    ```bash
+    git add -A
+    git commit -m "chore: Bump version to {{param.version}}"
+    echo "commit=ok"
+    ```
+
+    ```oracle
+    assert output contains "commit=ok";
+    ```
+  #/
+
+  # create-tag : script
+    - commit-release
+    ```bash
+    git tag -a v{{param.version}} -m "Release v{{param.version}}"
+    echo "tag=created"
+    ```
+
+    ```oracle
+    assert output contains "tag=created";
+    ```
+  #/
+
+  # push-release : script
+    - create-tag
+    ```bash
+    git push origin main && git push origin v{{param.version}} && echo "push=ok"
+    ```
+
+    ```oracle
+    assert output contains "push=ok";
+    ```
+  #/
+
+  # local-install : script
+    - push-release
+    ```bash
+    go build -o $(go env GOPATH)/bin/gt ./cmd/gt
+    gt version
+    ```
+
+    ```oracle
+    assert output contains "{{param.version}}";
+    ```
+  #/
+
+  # restart-daemons : script
+    - local-install
+    ```bash
+    gt daemon stop && gt daemon start
+    gt daemon status
+    echo "daemons=restarted"
+    ```
+
+    ```oracle
+    assert output contains "daemons=restarted";
+    ```
+  #/
+
+  # release-complete : text
+    - restart-daemons
+    user>
+      Release v{{param.version}} complete.
+      All workspaces verified clean, version files updated, tag pushed,
+      CI triggered, local binary rebuilt, daemons restarted.
+  #/
+
+##/

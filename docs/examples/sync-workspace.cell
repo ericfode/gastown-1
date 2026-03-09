@@ -1,0 +1,176 @@
+-- Sync Workspace — workspace synchronization for batch prep.
+-- Syncs git/beads, cleans cruft, verifies baseline, reports readiness.
+
+## sync-workspace
+
+  input param.setup_command : str default("")
+  input param.typecheck_command : str default("")
+  input param.lint_command : str default("")
+  input param.test_command : str default("")
+  input param.build_command : str default("")
+
+  # assess-state : script
+    ```bash
+    gt prime
+    bd prime
+    git status --porcelain
+    git stash list
+    git branch --show-current
+    bd sync --status
+    echo "state_assessed"
+    ```
+
+    ```oracle
+    assert output contains "state_assessed";
+    ```
+  #/
+
+  # handle-dirty-state : llm
+    - assess-state
+    system>
+      You are cleaning up in-flight work before syncing.
+      Commit if ready, stash if not. Warn about untracked files.
+      Do not auto-delete without confirmation.
+    user>
+      If uncommitted changes: commit or stash.
+      If untracked files: report prominently (may be WIP, artifacts, or cruft).
+      If stash entries: assess age and value.
+      ```bash
+      git stash list
+      ```
+    accept>
+      Working tree clean or explicitly stashed.
+  #/
+
+  # cleanup-worktrees : script
+    - handle-dirty-state
+    ```bash
+    git worktree list
+    git worktree prune
+    echo "worktrees_pruned"
+    ```
+
+    ```oracle
+    assert output contains "worktrees_pruned";
+    ```
+  #/
+
+  # sync-git : llm
+    - cleanup-worktrees
+    system>
+      You are syncing with git remote. Preserve valuable work on conflict.
+      Conflict philosophy: preserve and re-land, not discard.
+    user>
+      ```bash
+      git fetch origin
+      git log --oneline HEAD..origin/main | head -5
+      git log --oneline origin/main..HEAD | head -5
+      git pull --rebase origin main
+      ```
+      If conflicts: assess value, file bead if valuable, reset to clean state.
+      If obsolete: discard with note. If unclear: escalate.
+    accept>
+      Local branch matches or is cleanly ahead of origin/main.
+  #/
+
+  # sync-beads : script
+    - sync-git
+    ```bash
+    bd sync
+    echo "beads_synced"
+    ```
+
+    ```oracle
+    assert output contains "beads_synced";
+    ```
+  #/
+
+  # run-doctor : llm
+    - sync-beads
+    system>
+      You are running beads health check and triaging findings.
+    user>
+      ```bash
+      bd doctor
+      ```
+      Quick fix (<5 min): fix now.
+      Medium fix: file a bead.
+      Unclear: note for human review.
+    format> findings
+      { issues_found: number, fixed: number, filed: number, deferred: number }
+  #/
+
+  # verify-build : script
+    - run-doctor
+    ```bash
+    EXIT=0
+    if [ -n "{{param.setup_command}}" ]; then
+      {{param.setup_command}} || EXIT=1
+    fi
+    if [ -n "{{param.typecheck_command}}" ]; then
+      {{param.typecheck_command}} || EXIT=1
+    fi
+    if [ -n "{{param.lint_command}}" ]; then
+      {{param.lint_command}} || EXIT=1
+    fi
+    if [ -n "{{param.build_command}}" ]; then
+      {{param.build_command}} || EXIT=1
+    fi
+    if [ $EXIT -eq 0 ]; then
+      echo "build_ok"
+    else
+      echo "build_failed"
+    fi
+    ```
+
+    ```oracle
+    assert output contains "build_ok";
+    ```
+  #/
+
+  # run-tests : script
+    - verify-build
+    ```bash
+    if [ -n "{{param.test_command}}" ]; then
+      {{param.test_command}} && echo "tests_pass" || echo "tests_fail"
+    else
+      echo "tests_skipped"
+    fi
+    ```
+  #/
+
+  # generate-report : llm
+    - run-tests
+    system>
+      You are generating a sync report. Be structured and terse.
+    user>
+      ```bash
+      BRANCH=$(git rev-parse --abbrev-ref HEAD)
+      BEHIND=$(git rev-list HEAD..origin/main --count)
+      AHEAD=$(git rev-list origin/main..HEAD --count)
+      echo "branch=$BRANCH behind=$BEHIND ahead=$AHEAD"
+      ```
+      Include: git status, beads sync, doctor findings, build result,
+      test result, worktrees cleaned, ready-for-work verdict.
+    format> report
+      { branch: str, behind: number, ahead: number, build: str, tests: str, ready: boolean }
+  #/
+
+  # signal-ready : script
+    - generate-report
+    ```bash
+    if [ "{{generate-report.ready}}" = "true" ]; then
+      echo "SYNC_COMPLETE"
+    else
+      echo "SYNC_FAILED"
+    fi
+    ```
+
+    ```oracle
+    assert output contains "SYNC_COMPLETE";
+    ```
+  #/
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/

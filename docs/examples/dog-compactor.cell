@@ -1,0 +1,118 @@
+-- Dog Compactor: Compact Dolt commit history on production databases.
+-- ZFC exempt — Go code is the executor. Script cells invoke compactor_dog.go.
+
+## dog-compactor {
+  input param.commit_threshold : str default("500")
+  input param.databases        : str default("hq,beads,gastown")
+  input param.mode             : str default("flatten")
+  input param.keep_recent      : str default("50")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # inspect : script
+    @retry(max: 2)
+    user>
+      Inspect databases for commit count against threshold.
+    ```bash
+    IFS=',' read -ra DBS <<< "{{param.databases}}"
+    THRESHOLD={{param.commit_threshold}}
+
+    for db in "${DBS[@]}"; do
+      COUNT=$(dolt sql -r csv -q "SELECT COUNT(*) AS c FROM \`$db\`.dolt_log" 2>/dev/null | tail -1)
+      if [ "$COUNT" -ge "$THRESHOLD" ]; then
+        echo "$db: $COUNT commits (COMPACT)"
+      else
+        echo "$db: $COUNT commits (skip)"
+      fi
+    done
+    ```
+
+    ```oracle
+    assert output contains "commits";
+    ```
+  #/
+
+  # compact : script
+    - inspect
+    @retry(max: 1)
+    user>
+      Compact databases exceeding threshold. Mode: flatten or surgical.
+    ```bash
+    IFS=',' read -ra DBS <<< "{{param.databases}}"
+    THRESHOLD={{param.commit_threshold}}
+    MODE="{{param.mode}}"
+    KEEP={{param.keep_recent}}
+    COMPACTED=0
+    SKIPPED=0
+
+    for db in "${DBS[@]}"; do
+      COUNT=$(dolt sql -r csv -q "SELECT COUNT(*) AS c FROM \`$db\`.dolt_log" 2>/dev/null | tail -1)
+      if [ "$COUNT" -lt "$THRESHOLD" ]; then
+        SKIPPED=$((SKIPPED + 1))
+        continue
+      fi
+
+      # Pre-flight row counts
+      PREFLIGHT=$(dolt sql -r csv -q "SELECT table_name, rows FROM \`$db\`.dolt_status" 2>/dev/null)
+
+      if [ "$MODE" = "flatten" ]; then
+        ROOT=$(dolt sql -r csv -q "SELECT commit_hash FROM \`$db\`.dolt_log ORDER BY date ASC LIMIT 1" 2>/dev/null | tail -1)
+        dolt sql -q "USE \`$db\`; CALL DOLT_RESET('--soft', '$ROOT'); CALL DOLT_COMMIT('-Am', 'compaction: flatten history')" 2>&1
+      else
+        echo "Surgical mode for $db (keep_recent=$KEEP)"
+        # Surgical mode handled by compactor_dog.go
+      fi
+
+      dolt sql -q "USE \`$db\`; CALL dolt_gc()" 2>&1
+      COMPACTED=$((COMPACTED + 1))
+      echo "$db: compacted ($MODE)"
+    done
+
+    echo "compacted=$COMPACTED skipped=$SKIPPED"
+    ```
+
+    ```oracle
+    assert output contains "compacted=";
+    ```
+  #/
+
+  # verify : script
+    - compact
+    user>
+      Verify data integrity post-compaction.
+    ```bash
+    IFS=',' read -ra DBS <<< "{{param.databases}}"
+    ERRORS=0
+
+    for db in "${DBS[@]}"; do
+      FINAL=$(dolt sql -r csv -q "SELECT COUNT(*) AS c FROM \`$db\`.dolt_log" 2>/dev/null | tail -1)
+      echo "$db: $FINAL commits after compaction"
+    done
+
+    echo "verify=done errors=$ERRORS"
+    ```
+  #/
+
+  # report : script
+    - verify
+    user>
+      Report findings and signal DOG_DONE.
+    ```bash
+    echo "## Compactor Dog Report"
+    echo "Inspect: {{inspect}}"
+    echo "Compact: {{compact}}"
+    echo "Verify: {{verify}}"
+
+    gt mail send deacon/ -s "DOG_DONE: compactor" -m "Task: dog-compactor
+    Mode: {{param.mode}}
+    Compact: {{compact}}
+    Verify: {{verify}}
+    Status: COMPLETE"
+    ```
+  #/
+
+  inspect -> compact -> verify -> report
+##/

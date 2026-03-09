@@ -1,0 +1,197 @@
+-- Polecat Work — full work lifecycle from assignment through completion.
+-- Self-cleaning: implement, verify, gt done, gone. Refinery merges from MQ.
+
+## polecat-work
+
+  input param.issue : str required
+  input param.base_branch : str default("main")
+  input param.setup_command : str default("")
+  input param.typecheck_command : str default("")
+  input param.test_command : str default("")
+  input param.lint_command : str default("")
+  input param.build_command : str default("")
+
+  # load-context : llm
+    system>
+      You are a polecat. Self-cleaning worker: implement, gt done, gone.
+      You do NOT push to main, close your own issue, or wait for merge.
+    user>
+      Prime and understand your assignment:
+      ```bash
+      gt prime
+      bd prime
+      gt hook
+      bd show {{param.issue}}
+      gt mail inbox
+      ```
+      Understand requirements, involved files, dependencies, blockers.
+      If blocked or unclear, mail Witness immediately.
+    accept>
+      Requirements understood, ready to implement.
+  #/
+
+  # branch-setup : script
+    - load-context
+    ```bash
+    git status
+    BRANCH=$(git branch --show-current)
+    if echo "$BRANCH" | grep -q "^polecat/"; then
+      echo "on_feature_branch=$BRANCH"
+    else
+      git fetch origin
+      git checkout -b polecat/work origin/{{param.base_branch}}
+      echo "on_feature_branch=polecat/work"
+    fi
+    git fetch origin
+    git rebase origin/{{param.base_branch}}
+    if [ -n "{{param.setup_command}}" ]; then
+      {{param.setup_command}}
+    fi
+    git status
+    echo "branch_ready"
+    ```
+
+    ```oracle
+    assert output contains "branch_ready";
+    ```
+  #/
+
+  # implement : llm
+    - branch-setup
+    system>
+      You are implementing the assigned work. Follow codebase conventions.
+      Make atomic commits. Keep changes scoped. Do not gold-plate.
+      Persist findings to the bead before closing steps.
+    user>
+      Implement the solution for {{param.issue}}.
+      Persist findings as you go:
+      ```bash
+      bd update {{param.issue}} --notes "Findings: <what you discovered>"
+      ```
+      Commit frequently:
+      ```bash
+      git add <files>
+      git commit -m "<type>: <description> ({{param.issue}})"
+      ```
+      If you find bugs outside scope:
+      ```bash
+      bd create --title "Found: <desc>" --type bug --priority 2
+      ```
+      If stuck >15 min, mail Witness for help.
+    accept>
+      Implementation complete, all changes committed.
+  #/
+
+  # self-review : llm
+    - implement
+    system>
+      You are self-reviewing changes before build check. Be critical.
+    user>
+      Review your diff:
+      ```bash
+      git diff origin/{{param.base_branch}}...HEAD
+      git log --oneline origin/{{param.base_branch}}..HEAD
+      git diff --stat origin/{{param.base_branch}}...HEAD
+      ```
+      Check for: bugs, security, style, completeness, cruft, debug prints.
+      Fix issues found. Verify only relevant files are changed.
+    accept>
+      Changes clean and ready for build check.
+  #/
+
+  # build-check : script
+    - self-review
+    ```bash
+    EXIT=0
+    if [ -n "{{param.build_command}}" ]; then
+      {{param.build_command}} || EXIT=1
+    fi
+    if [ -n "{{param.setup_command}}" ]; then
+      {{param.setup_command}} || EXIT=1
+    fi
+    if [ -n "{{param.typecheck_command}}" ]; then
+      {{param.typecheck_command}} || EXIT=1
+    fi
+    if [ -n "{{param.lint_command}}" ]; then
+      {{param.lint_command}} || EXIT=1
+    fi
+    if [ $EXIT -eq 0 ]; then
+      echo "build_ok"
+    else
+      echo "build_failed"
+    fi
+    ```
+
+    ```oracle
+    assert output contains "build_ok";
+    ```
+  #/
+
+  # commit-changes : script
+    - build-check
+    ```bash
+    git status --porcelain
+    if [ -n "$(git status --porcelain)" ]; then
+      git add -A && git commit -m "chore: final changes ({{param.issue}})"
+    fi
+    COMMITS=$(git log origin/{{param.base_branch}}..HEAD --oneline | wc -l)
+    echo "commits_ahead=$COMMITS"
+    if [ "$COMMITS" -eq 0 ]; then
+      echo "NO_COMMITS"
+    else
+      echo "commit_verified"
+    fi
+    ```
+
+    ```oracle
+    assert output contains "commit_verified";
+    reject if output contains "NO_COMMITS";
+    ```
+  #/
+
+  # pre-verify : script
+    - commit-changes
+    ```bash
+    git fetch origin {{param.base_branch}}
+    git rebase origin/{{param.base_branch}}
+    EXIT=0
+    if [ -n "{{param.build_command}}" ]; then
+      {{param.build_command}} || EXIT=1
+    fi
+    if [ -n "{{param.typecheck_command}}" ]; then
+      {{param.typecheck_command}} || EXIT=1
+    fi
+    if [ -n "{{param.lint_command}}" ]; then
+      {{param.lint_command}} || EXIT=1
+    fi
+    if [ -n "{{param.test_command}}" ]; then
+      {{param.test_command}} || EXIT=1
+    fi
+    if [ $EXIT -eq 0 ]; then
+      echo "pre_verified"
+    else
+      echo "pre_verify_failed"
+    fi
+    ```
+
+    ```oracle
+    assert output contains "pre_verified";
+    ```
+  #/
+
+  # submit-and-exit : script
+    - pre-verify
+    ```bash
+    COMMITS=$(git log origin/{{param.base_branch}}..HEAD --oneline | wc -l)
+    if [ "$COMMITS" -eq 0 ]; then
+      echo "ERROR: no commits to submit"
+      exit 1
+    fi
+    gt done --pre-verified
+    echo "submitted"
+    ```
+  #/
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/

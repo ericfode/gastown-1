@@ -1,0 +1,103 @@
+-- Dog Stale DB: Detect and clean orphan test databases from Dolt server.
+-- Infrastructure formula — script cells for scan/cleanup/report.
+
+## dog-stale-db {
+  input param.port               : str default("3307")
+  input param.max_orphans_for_sql : str default("50")
+  input param.warn_threshold     : str default("5")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # scan : script
+    @retry(max: 2)
+    user>
+      Scan Dolt server for stale/test databases.
+    ```bash
+    PORT={{param.port}}
+
+    ALL_DBS=$(dolt sql -r csv -q "SHOW DATABASES" --port=$PORT 2>/dev/null | tail -n +2)
+    TOTAL=0
+    ORPHANS=""
+    ORPHAN_COUNT=0
+    PROD_COUNT=0
+
+    for db in $ALL_DBS; do
+      TOTAL=$((TOTAL + 1))
+      case "$db" in
+        testdb_*|beads_t*|beads_pt*|beads_vr*|doctest_*|doctortest_*|information_schema|mysql)
+          ORPHANS="$ORPHANS $db"
+          ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
+          ;;
+        *)
+          PROD_COUNT=$((PROD_COUNT + 1))
+          ;;
+      esac
+    done
+
+    echo "{\"total\": $TOTAL, \"prod\": $PROD_COUNT, \"orphans\": $ORPHAN_COUNT, \"names\": \"$(echo $ORPHANS | xargs)\"}"
+    ```
+
+    ```oracle
+    assert output contains "orphans";
+    ```
+  #/
+
+  # cleanup : script
+    - scan
+    user>
+      Clean up orphan databases (SQL if manageable, escalate if too many).
+    ```bash
+    PORT={{param.port}}
+    MAX={{param.max_orphans_for_sql}}
+    ORPHAN_COUNT=$(echo '{{scan}}' | jq -r '.orphans')
+    NAMES=$(echo '{{scan}}' | jq -r '.names')
+
+    if [ "$ORPHAN_COUNT" -eq 0 ]; then
+      echo "cleanup=none"
+      exit 0
+    fi
+
+    if [ "$ORPHAN_COUNT" -gt "$MAX" ]; then
+      echo "Too many orphans ($ORPHAN_COUNT) for SQL cleanup — escalating."
+      gt escalate -s HIGH "Dolt: $ORPHAN_COUNT orphan databases (too many for SQL cleanup)"
+      echo "cleanup=escalated count=$ORPHAN_COUNT"
+      exit 0
+    fi
+
+    REMOVED=0
+    for name in $NAMES; do
+      dolt sql -q "DROP DATABASE IF EXISTS \`$name\`" --port=$PORT 2>&1 && REMOVED=$((REMOVED + 1))
+    done
+
+    echo "cleanup=done removed=$REMOVED"
+    ```
+  #/
+
+  # report : script
+    - cleanup
+    user>
+      Report findings and signal DOG_DONE.
+    ```bash
+    ORPHAN_COUNT=$(echo '{{scan}}' | jq -r '.orphans')
+    WARN={{param.warn_threshold}}
+
+    echo "## Stale DB Dog Report"
+    echo "Scan: {{scan}}"
+    echo "Cleanup: {{cleanup}}"
+
+    if [ "$ORPHAN_COUNT" -ge "$WARN" ]; then
+      gt mail send deacon/ -s "WARN: $ORPHAN_COUNT orphan databases detected" -m "Scan: {{scan}}"
+    fi
+
+    gt mail send deacon/ -s "DOG_DONE: stale-db" -m "Task: stale-db-scan
+    Scan: {{scan}}
+    Cleanup: {{cleanup}}
+    Status: COMPLETE"
+    ```
+  #/
+
+  scan -> cleanup -> report
+##/

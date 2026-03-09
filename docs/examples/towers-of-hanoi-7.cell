@@ -1,0 +1,795 @@
+-- Towers of Hanoi (7 disks) -- durability proof, not computation.
+-- Pre-computed 127 moves. Agent just closes steps. Proves crash-recovery at scale.
+
+## towers-of-hanoi-7
+
+  input param.source_peg : str default("A")
+  input param.target_peg : str default("C")
+  input param.auxiliary_peg : str default("B")
+
+  # setup : text
+    user>
+      Verify initial state: all 7 disks stacked on peg {{param.source_peg}}.
+      Largest on bottom.
+    accept>
+      Initial state verified.
+  #/
+
+  # move-1 : text
+    - setup
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-2 : text
+    - move-1
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-3 : text
+    - move-2
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-4 : text
+    - move-3
+    user>
+      Move disk 3: A -> C
+  #/
+
+  # move-5 : text
+    - move-4
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-6 : text
+    - move-5
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-7 : text
+    - move-6
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-8 : text
+    - move-7
+    user>
+      Move disk 4: A -> B
+  #/
+
+  # move-9 : text
+    - move-8
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-10 : text
+    - move-9
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-11 : text
+    - move-10
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-12 : text
+    - move-11
+    user>
+      Move disk 3: C -> B
+  #/
+
+  # move-13 : text
+    - move-12
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-14 : text
+    - move-13
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-15 : text
+    - move-14
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-16 : text
+    - move-15
+    user>
+      Move disk 5: A -> C
+  #/
+
+  # move-17 : text
+    - move-16
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-18 : text
+    - move-17
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-19 : text
+    - move-18
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-20 : text
+    - move-19
+    user>
+      Move disk 3: B -> A
+  #/
+
+  # move-21 : text
+    - move-20
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-22 : text
+    - move-21
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-23 : text
+    - move-22
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-24 : text
+    - move-23
+    user>
+      Move disk 4: B -> C
+  #/
+
+  # move-25 : text
+    - move-24
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-26 : text
+    - move-25
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-27 : text
+    - move-26
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-28 : text
+    - move-27
+    user>
+      Move disk 3: A -> C
+  #/
+
+  # move-29 : text
+    - move-28
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-30 : text
+    - move-29
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-31 : text
+    - move-30
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-32 : text
+    - move-31
+    user>
+      Move disk 6: A -> B
+  #/
+
+  # move-33 : text
+    - move-32
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-34 : text
+    - move-33
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-35 : text
+    - move-34
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-36 : text
+    - move-35
+    user>
+      Move disk 3: C -> B
+  #/
+
+  # move-37 : text
+    - move-36
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-38 : text
+    - move-37
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-39 : text
+    - move-38
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-40 : text
+    - move-39
+    user>
+      Move disk 4: C -> A
+  #/
+
+  # move-41 : text
+    - move-40
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-42 : text
+    - move-41
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-43 : text
+    - move-42
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-44 : text
+    - move-43
+    user>
+      Move disk 3: B -> A
+  #/
+
+  # move-45 : text
+    - move-44
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-46 : text
+    - move-45
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-47 : text
+    - move-46
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-48 : text
+    - move-47
+    user>
+      Move disk 5: C -> B
+  #/
+
+  # move-49 : text
+    - move-48
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-50 : text
+    - move-49
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-51 : text
+    - move-50
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-52 : text
+    - move-51
+    user>
+      Move disk 3: A -> C
+  #/
+
+  # move-53 : text
+    - move-52
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-54 : text
+    - move-53
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-55 : text
+    - move-54
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-56 : text
+    - move-55
+    user>
+      Move disk 4: A -> B
+  #/
+
+  # move-57 : text
+    - move-56
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-58 : text
+    - move-57
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-59 : text
+    - move-58
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-60 : text
+    - move-59
+    user>
+      Move disk 3: C -> B
+  #/
+
+  # move-61 : text
+    - move-60
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-62 : text
+    - move-61
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-63 : text
+    - move-62
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-64 : text
+    - move-63
+    user>
+      Move disk 7: A -> C
+  #/
+
+  # move-65 : text
+    - move-64
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-66 : text
+    - move-65
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-67 : text
+    - move-66
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-68 : text
+    - move-67
+    user>
+      Move disk 3: B -> A
+  #/
+
+  # move-69 : text
+    - move-68
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-70 : text
+    - move-69
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-71 : text
+    - move-70
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-72 : text
+    - move-71
+    user>
+      Move disk 4: B -> C
+  #/
+
+  # move-73 : text
+    - move-72
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-74 : text
+    - move-73
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-75 : text
+    - move-74
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-76 : text
+    - move-75
+    user>
+      Move disk 3: A -> C
+  #/
+
+  # move-77 : text
+    - move-76
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-78 : text
+    - move-77
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-79 : text
+    - move-78
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-80 : text
+    - move-79
+    user>
+      Move disk 5: B -> A
+  #/
+
+  # move-81 : text
+    - move-80
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-82 : text
+    - move-81
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-83 : text
+    - move-82
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-84 : text
+    - move-83
+    user>
+      Move disk 3: C -> B
+  #/
+
+  # move-85 : text
+    - move-84
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-86 : text
+    - move-85
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-87 : text
+    - move-86
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-88 : text
+    - move-87
+    user>
+      Move disk 4: C -> A
+  #/
+
+  # move-89 : text
+    - move-88
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-90 : text
+    - move-89
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-91 : text
+    - move-90
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-92 : text
+    - move-91
+    user>
+      Move disk 3: B -> A
+  #/
+
+  # move-93 : text
+    - move-92
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-94 : text
+    - move-93
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-95 : text
+    - move-94
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-96 : text
+    - move-95
+    user>
+      Move disk 6: B -> C
+  #/
+
+  # move-97 : text
+    - move-96
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-98 : text
+    - move-97
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-99 : text
+    - move-98
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-100 : text
+    - move-99
+    user>
+      Move disk 3: A -> C
+  #/
+
+  # move-101 : text
+    - move-100
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-102 : text
+    - move-101
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-103 : text
+    - move-102
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-104 : text
+    - move-103
+    user>
+      Move disk 4: A -> B
+  #/
+
+  # move-105 : text
+    - move-104
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-106 : text
+    - move-105
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-107 : text
+    - move-106
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-108 : text
+    - move-107
+    user>
+      Move disk 3: C -> B
+  #/
+
+  # move-109 : text
+    - move-108
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-110 : text
+    - move-109
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-111 : text
+    - move-110
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-112 : text
+    - move-111
+    user>
+      Move disk 5: A -> C
+  #/
+
+  # move-113 : text
+    - move-112
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-114 : text
+    - move-113
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-115 : text
+    - move-114
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-116 : text
+    - move-115
+    user>
+      Move disk 3: B -> A
+  #/
+
+  # move-117 : text
+    - move-116
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-118 : text
+    - move-117
+    user>
+      Move disk 2: C -> A
+  #/
+
+  # move-119 : text
+    - move-118
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-120 : text
+    - move-119
+    user>
+      Move disk 4: B -> C
+  #/
+
+  # move-121 : text
+    - move-120
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # move-122 : text
+    - move-121
+    user>
+      Move disk 2: A -> B
+  #/
+
+  # move-123 : text
+    - move-122
+    user>
+      Move disk 1: C -> B
+  #/
+
+  # move-124 : text
+    - move-123
+    user>
+      Move disk 3: A -> C
+  #/
+
+  # move-125 : text
+    - move-124
+    user>
+      Move disk 1: B -> A
+  #/
+
+  # move-126 : text
+    - move-125
+    user>
+      Move disk 2: B -> C
+  #/
+
+  # move-127 : text
+    - move-126
+    user>
+      Move disk 1: A -> C
+  #/
+
+  # verify : llm
+    - move-127
+    user>
+      Verify final state: all 7 disks on peg {{param.target_peg}}.
+      Tower intact. All moves were legal.
+    format> verification
+      { valid: "true" | "false", disk_count: number, final_peg: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.valid == "true";
+    assert output.disk_count == 7;
+    ```
+  #/
+
+##/

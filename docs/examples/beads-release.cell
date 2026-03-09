@@ -1,0 +1,218 @@
+-- Beads release workflow — version bump to verified release.
+-- Orchestrates: preflight, docs, bump, git, CI, artifact verification, install.
+
+## beads-release
+
+  input param.version : str default("")
+
+  # preflight-git : script
+    ```bash
+    git status
+    echo "status=checked"
+    ```
+
+    ```oracle
+    assert output contains "status=checked";
+    ```
+  #/
+
+  # preflight-pull : script
+    - preflight-git
+    ```bash
+    git pull --rebase && echo "pull=ok" || echo "pull=failed"
+    ```
+
+    ```oracle
+    assert output contains "pull=ok";
+    ```
+  #/
+
+  # review-changes : script
+    - preflight-pull
+    ```bash
+    git log $(git describe --tags --abbrev=0)..HEAD --oneline
+    echo "review=done"
+    ```
+
+    ```oracle
+    assert output contains "review=done";
+    ```
+  #/
+
+  # update-changelog : llm
+    - review-changes
+    system>
+      You are a release engineer updating CHANGELOG.md.
+    context>
+      Changes since last release: {{review-changes}}
+      Target version: {{param.version}}
+    user>
+      Write the [Unreleased] section for {{param.version}} in Keep a Changelog format.
+      Sections: Added, Changed, Fixed, Documentation.
+    format> changelog
+      Markdown changelog entries.
+  #/
+
+  # update-info-go : llm
+    - update-changelog
+    system>
+      You are a release engineer updating info.go versionChanges.
+    context>
+      Changelog: {{update-changelog}}
+      Version: {{param.version}}
+    user>
+      Add entry to versionChanges in cmd/bd/info.go.
+      Focus on workflow-impacting changes agents need to know.
+    format> code
+      Go map entry for versionChanges.
+  #/
+
+  # run-bump-script : script
+    - update-info-go
+    ```bash
+    ./scripts/bump-version.sh {{param.version}} && echo "bump=ok"
+    ```
+
+    ```oracle
+    assert output contains "bump=ok";
+    ```
+  #/
+
+  # verify-versions : script
+    - run-bump-script
+    ```bash
+    grep 'Version = ' cmd/bd/version.go
+    jq -r '.version' .claude-plugin/plugin.json
+    jq -r '.version' npm-package/package.json
+    grep 'version = ' integrations/beads-mcp/pyproject.toml
+    echo "verify=done"
+    ```
+
+    ```oracle
+    assert output contains "{{param.version}}";
+    assert output contains "verify=done";
+    ```
+  #/
+
+  # commit-release : script
+    - verify-versions
+    ```bash
+    git add -A
+    git commit -m "chore: Bump version to {{param.version}}"
+    echo "commit=ok"
+    ```
+
+    ```oracle
+    assert output contains "commit=ok";
+    ```
+  #/
+
+  # create-tag : script
+    - commit-release
+    ```bash
+    git tag -a v{{param.version}} -m "Release v{{param.version}}"
+    echo "tag=created"
+    ```
+
+    ```oracle
+    assert output contains "tag=created";
+    ```
+  #/
+
+  # push-main : script
+    - create-tag
+    ```bash
+    git push origin main && echo "push-main=ok" || echo "push-main=failed"
+    ```
+
+    ```oracle
+    assert output contains "push-main=ok";
+    ```
+  #/
+
+  # push-tag : script
+    - push-main
+    ```bash
+    git push origin v{{param.version}} && echo "push-tag=ok"
+    ```
+
+    ```oracle
+    assert output contains "push-tag=ok";
+    ```
+  #/
+
+  # wait-ci : text
+    - push-tag
+    user>
+      Monitor GitHub Actions: https://github.com/steveyegge/beads/actions
+      Wait for release builds to complete (5-10 min).
+    accept>
+      CI passed. All artifacts built.
+  #/
+
+  # verify-github-release : text
+    - wait-ci
+    user>
+      Check https://github.com/steveyegge/beads/releases/tag/v{{param.version}}
+      Verify: release created, binaries attached, checksums present.
+    accept>
+      GitHub release verified.
+  #/
+
+  # verify-npm : script
+    - verify-github-release
+    ```bash
+    npm show @beads/bd version
+    ```
+
+    ```oracle
+    assert output contains "{{param.version}}";
+    ```
+  #/
+
+  # verify-pypi : script
+    - verify-github-release
+    ```bash
+    pip index versions beads-mcp 2>/dev/null | head -3
+    ```
+
+    ```oracle
+    assert output contains "{{param.version}}";
+    ```
+  #/
+
+  # local-install : script
+    - verify-npm
+    - verify-pypi
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
+    bd --version
+    ```
+
+    ```oracle
+    assert output contains "{{param.version}}";
+    ```
+  #/
+
+  # restart-daemons : script
+    - local-install
+    ```bash
+    bd daemons killall
+    bd daemons list
+    echo "daemons=restarted"
+    ```
+
+    ```oracle
+    assert output contains "daemons=restarted";
+    ```
+  #/
+
+  # release-complete : text
+    - restart-daemons
+    user>
+      Release v{{param.version}} complete.
+      All version files updated, tag pushed, CI artifacts built,
+      npm/PyPI published, local install updated, daemons restarted.
+  #/
+
+##/

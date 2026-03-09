@@ -1,0 +1,145 @@
+-- Polecat PR Review — review an external PR and decide merge/reject/revise.
+-- Self-cleaning model: review, submit findings, gt done, gone.
+
+## polecat-review-pr
+
+  input param.pr_url : str required
+  input param.issue : str required
+  input param.rig : str required
+
+  # load-context : llm
+    system>
+      You are a polecat reviewing an external PR. Self-cleaning model:
+      review, submit findings, run gt done, you cease to exist.
+    user>
+      Prime environment and understand the PR:
+      ```bash
+      gt prime
+      bd prime
+      gt hook
+      bd show {{param.issue}}
+      gh pr view {{param.pr_url}} --json title,body,author,files,commits
+      gh pr diff {{param.pr_url}}
+      gh pr checks {{param.pr_url}}
+      gh pr view {{param.pr_url}} --json mergeable,reviewDecision
+      ```
+      Understand purpose, scope, and CI status.
+    accept>
+      PR purpose and scope understood.
+  #/
+
+  # review-code : llm
+    - load-context
+    system>
+      You are reviewing code changes. Be thorough and actionable.
+    user>
+      Review the diff systematically:
+      ```bash
+      gh pr diff {{param.pr_url}}
+      ```
+      Check for: correctness, security, style, tests, docs, scope creep.
+      For each file, assess consistency with existing patterns.
+      Categorize issues: blocking (must fix), suggestions, questions.
+    format> findings
+      { blocking: [str], suggestions: [str], questions: [str] }
+  #/
+
+  # check-tests : llm
+    - review-code
+    system>
+      You are verifying CI and test coverage for a PR.
+    user>
+      ```bash
+      gh pr checks {{param.pr_url}}
+      ```
+      Verify: CI passes, new tests for new functionality, edge case coverage,
+      test readability. Missing tests for new code is a blocking issue.
+    format> test_status
+      { ci_pass: boolean, has_new_tests: boolean, missing_tests: [str] }
+  #/
+
+  # make-decision : decision
+    - check-tests
+    system>
+      You are a PR reviewer making a final decision.
+      Decision matrix: clean code + tests pass = APPROVE.
+      Minor issues = REQUEST_CHANGES with specifics.
+      Major issues = REQUEST_CHANGES with explanation.
+      Unclear requirements = NEEDS_DISCUSSION (mail Witness).
+      Security concern = BLOCK (mail Witness immediately).
+    user>
+      Based on review findings and test status, decide:
+      APPROVE, REQUEST_CHANGES, NEEDS_DISCUSSION, or BLOCK.
+      If NEEDS_DISCUSSION or BLOCK, mail the witness:
+      ```bash
+      gt mail send {{param.rig}}/witness -s "PR review: <decision>" -m "PR: {{param.pr_url}}
+      Issue: {{param.issue}}
+      Detail: <rationale>"
+      ```
+    format> verdict
+      { decision: str, rationale: str, blocking_count: number }
+
+    ```oracle
+    json_parse(output);
+    assert output.decision in ["APPROVE", "REQUEST_CHANGES", "NEEDS_DISCUSSION", "BLOCK"];
+    ```
+  #/
+
+  # submit-review : script
+    - make-decision
+    ```bash
+    case "{{make-decision.decision}}" in
+      APPROVE)
+        gh pr review {{param.pr_url}} --approve --body "{{make-decision.rationale}}"
+        ;;
+      REQUEST_CHANGES)
+        gh pr review {{param.pr_url}} --request-changes --body "{{make-decision.rationale}}"
+        ;;
+      *)
+        gh pr review {{param.pr_url}} --comment --body "{{make-decision.rationale}}"
+        ;;
+    esac
+    echo "review_submitted"
+    ```
+
+    ```oracle
+    assert output contains "review_submitted";
+    ```
+  #/
+
+  # file-followups : llm
+    - submit-review
+    system>
+      You are filing beads for followup work discovered during review.
+    user>
+      For issues outside PR scope:
+      ```bash
+      bd create --type=bug --title="Found during PR review: <desc>" \
+        --description="Discovered reviewing {{param.pr_url}}. <details>"
+      ```
+      For improvements suggested but not required:
+      ```bash
+      bd create --type=task --title="Improvement: <desc>" \
+        --description="Suggested during review of {{param.pr_url}}. <details>"
+      ```
+      Update the tracking issue:
+      ```bash
+      bd update {{param.issue}} --notes "Review complete. Decision: {{make-decision.decision}}"
+      bd sync
+      ```
+    accept>
+      All followups filed and synced.
+  #/
+
+  # complete-and-exit : script
+    - file-followups
+    ```bash
+    bd sync
+    gt done
+    echo "done"
+    ```
+  #/
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/

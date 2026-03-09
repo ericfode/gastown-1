@@ -1,0 +1,309 @@
+-- Refinery Patrol — merge queue processor patrol loop.
+-- The Engineer in the engine room. Process polecat branches one at a time.
+
+## refinery-patrol
+
+  input param.wisp_type : str default("patrol")
+  input param.integration_branch_refinery_enabled : str default("true")
+  input param.integration_branch_auto_land : str default("false")
+  input param.run_tests : str default("true")
+  input param.setup_command : str default("")
+  input param.typecheck_command : str default("")
+  input param.lint_command : str default("")
+  input param.test_command : str default("go test ./...")
+  input param.build_command : str default("")
+  input param.target_branch : str default("main")
+  input param.delete_merged_branches : str default("true")
+  input param.judgment_enabled : str default("false")
+  input param.review_depth : str default("standard")
+
+  # inbox-check : llm
+    system>
+      You are the Refinery checking mail for MERGE_READY submissions.
+      Clean up wisps first, then process inbox.
+    user>
+      ```bash
+      bd mol wisp gc --closed --force
+      bd mol wisp gc --age 1h --force
+      gt mail inbox
+      ```
+      For each MERGE_READY: extract branch, issue, polecat name, MR bead ID.
+      Track polecat name + MR bead ID + message ID for merge-push step.
+      For PATROL_WAKE: acknowledge and archive.
+      For HELP: assess and escalate if needed.
+      For HANDOFF: absorb context and archive.
+    accept>
+      Inbox processed. Merge queue populated.
+  #/
+
+  # queue-scan : llm
+    - inbox-check
+    system>
+      You are scanning the beads merge queue. This is the source of truth.
+    user>
+      ```bash
+      git fetch --prune origin
+      gt mq list
+      ```
+      For each MR, verify the branch exists:
+      ```bash
+      git branch -r | grep <branch>
+      ```
+      If branch missing: `bd close <mr-id> --reason "Branch no longer exists"`
+      If queue empty, skip to check-integration-branches.
+    format> queue
+      { mr_count: number, verified: [str], orphaned: [str] }
+  #/
+
+  # process-branch : llm
+    - queue-scan
+    system>
+      You are performing mechanical rebase. Do NOT write application code.
+      Determine rebase target using Target Resolution Rule:
+      if integration_branch_refinery_enabled=true, use MR target when present,
+      otherwise {{param.target_branch}}.
+    user>
+      Pick next branch from queue. Verify branch still exists:
+      ```bash
+      git ls-remote --exit-code origin refs/heads/<polecat-branch>
+      ```
+      If gone: close MR bead, archive mail, skip to loop-check.
+      Attempt rebase:
+      ```bash
+      git checkout -b temp origin/<polecat-branch>
+      git rebase origin/<rebase-target>
+      ```
+      If conflicts: abort rebase, create conflict-resolution task, skip branch.
+      Never delete a branch that has conflicts.
+    format> rebase
+      { result: str, branch: str, conflict_task: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.result in ["success", "conflict", "branch_gone"];
+    ```
+  #/
+
+  # run-tests : script
+    - process-branch
+    ```bash
+    EXIT=0
+    if [ -n "{{param.setup_command}}" ]; then
+      {{param.setup_command}} || EXIT=1
+    fi
+    if [ -n "{{param.typecheck_command}}" ]; then
+      {{param.typecheck_command}} || EXIT=1
+    fi
+    if [ -n "{{param.lint_command}}" ]; then
+      {{param.lint_command}} || EXIT=1
+    fi
+    if [ -n "{{param.build_command}}" ]; then
+      {{param.build_command}} || EXIT=1
+    fi
+    if [ "{{param.run_tests}}" = "true" ] && [ -n "{{param.test_command}}" ]; then
+      {{param.test_command}} || EXIT=1
+    fi
+    if [ $EXIT -eq 0 ]; then
+      echo "tests_pass"
+    else
+      echo "tests_fail"
+    fi
+    ```
+  #/
+
+  # quality-review : llm
+    - run-tests
+    system>
+      You are reviewing the merge diff for quality issues.
+      Phase 1: measurement only — reviews do NOT gate merges.
+      Depth: {{param.review_depth}}.
+    user>
+      If "{{param.judgment_enabled}}" != "true", skip: "Quality review skipped."
+      Otherwise review the diff:
+      ```bash
+      git diff origin/{{param.target_branch}}...temp
+      ```
+      Assess: correctness, security, clarity, style.
+      Score 0.0-1.0. Recommend approve (>=0.45) or request_changes (<0.45).
+      Record result as wisp. Do NOT block merge.
+    format> review
+      { score: number, recommendation: str, issues: number }
+  #/
+
+  # handle-failures : decision
+    - quality-review
+    system>
+      You enforce the Beads Promise. If checks passed, auto-complete.
+      If failed, diagnose: branch regression or pre-existing?
+      Branch caused it: abort merge, reopen issue, notify witness, close MR bead,
+      delete branch, archive mail, skip to loop-check.
+      Pre-existing: file bead (check for duplicates first), proceed with merge.
+      FORBIDDEN: writing application code.
+    user>
+      If all checks passed: proceed to merge.
+      If any failed: diagnose and handle per the protocol.
+      Rejection checklist: reopen issue, MERGE_FAILED mail, close MR, delete branch, archive.
+    format> verdict
+      { pass: boolean, action: str, reason: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.action in ["merge", "reject", "proceed_preexisting"];
+    ```
+  #/
+
+  # merge-push : script
+    - handle-failures
+    ```bash
+    # Merge and push
+    git checkout {{param.target_branch}}
+    git merge --ff-only temp
+    git push origin {{param.target_branch}}
+
+    # Verify push succeeded
+    git fetch origin
+    LOCAL_SHA=$(git rev-parse {{param.target_branch}})
+    REMOTE_SHA=$(git rev-parse origin/{{param.target_branch}})
+    if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+      echo "PUSH_FAILED"
+      exit 1
+    fi
+    echo "merge_pushed"
+    ```
+
+    ```oracle
+    assert output contains "merge_pushed";
+    reject if output contains "PUSH_FAILED";
+    ```
+  #/
+
+  # post-merge : llm
+    - merge-push
+    system>
+      You are completing post-merge notifications and cleanup.
+      All steps are REQUIRED before proceeding.
+    user>
+      Send MERGED notification:
+      ```bash
+      gt mail send <rig>/witness -s "MERGED <polecat>" -m "Branch: <branch>
+      Issue: <issue>
+      Merged-At: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      ```
+      Run post-merge cleanup:
+      ```bash
+      gt mq post-merge <rig> <mr-bead-id>
+      ```
+      Archive MERGE_READY mail:
+      ```bash
+      gt mail archive <message-id>
+      ```
+      Delete temp branch:
+      ```bash
+      git branch -d temp
+      ```
+    accept>
+      MERGED mail sent, MR closed, issue closed, mail archived.
+  #/
+
+  # loop-check : decision
+    - post-merge
+    system>
+      You are checking for more branches to process.
+    user>
+      More branches in queue?
+      If yes: return to process-branch with next branch.
+      If no: continue to generate-summary.
+      Track: branches_merged, branches_conflict, conflict_tasks.
+    format> verdict
+      { more_work: boolean, merged: number, conflicts: number }
+
+    ```oracle
+    json_parse(output);
+    ```
+  #/
+
+  # generate-summary : llm
+    - loop-check
+    system>
+      You are summarizing this patrol cycle. Be terse.
+    user>
+      Verify all merged branches have: MERGED mail sent, MR closed,
+      issue closed, MERGE_READY archived. Do any missed now.
+      Include: branches merged, test results, conflicts, tasks created.
+    format> digest
+      { merged: number, conflicts: number, tests_pass: boolean, summary: str }
+  #/
+
+  # check-integration-branches : llm
+    - generate-summary
+    system>
+      You manage integration branch landing.
+    user>
+      If "{{param.integration_branch_refinery_enabled}}" = "false": skip.
+      If "{{param.integration_branch_auto_land}}" = "false": skip.
+      If both true:
+      ```bash
+      bd list --type=epic --status=open
+      gt mq integration status <epic-id>
+      ```
+      If ready_to_land: `gt mq integration land <epic-id>`
+      Never land partial epics.
+    accept>
+      Integration branches checked.
+  #/
+
+  # context-check : decision
+    - check-integration-branches
+    system>
+      You are assessing session health for continue/handoff decision.
+    user>
+      Check: RSS, session age, context usage, work done this cycle.
+      ```bash
+      ps -o rss= -p $$
+      ```
+      If heavy on multiple signals, hand off. If light with active queue, continue.
+    format> verdict
+      { action: str, rss_mb: number, reason: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.action in ["CONTINUE", "HANDOFF"];
+    ```
+  #/
+
+  # patrol-cleanup : llm
+    - context-check
+    system>
+      You are cleaning up inbox at end of patrol cycle.
+    user>
+      ```bash
+      gt mail inbox
+      ```
+      Archive stale messages. Check for orphaned MR beads:
+      ```bash
+      bd list --type=merge-request --status=open
+      ```
+      Verify landed work before closing any MR bead.
+      Goal: inbox <=3 active messages.
+    accept>
+      Inbox clean.
+  #/
+
+  # burn-or-loop : script
+    - patrol-cleanup
+    ```bash
+    if [ "{{context-check.action}}" = "HANDOFF" ]; then
+      gt handoff -s "Patrol complete" -m "{{generate-summary.summary}}"
+      echo "action=HANDOFF"
+    else
+      gt mol step await-event --channel refinery \
+        --backoff-base 30s --backoff-mult 2 --backoff-max 5m --cleanup
+      gt patrol report --summary "{{generate-summary.summary}}"
+      echo "action=LOOP"
+    fi
+    ```
+  #/
+
+  squash> trigger: on_complete template: patrol include_metrics: true
+
+##/

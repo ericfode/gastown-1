@@ -1,0 +1,210 @@
+-- Witness Patrol — per-rig worker monitor patrol loop.
+-- Pit Boss: watch polecats, nudge toward completion, verify state, escalate.
+
+## witness-patrol
+
+  input param.wisp_type : str default("patrol")
+
+  # inbox-check : llm
+    system>
+      You are the Witness processing patrol mail.
+      Clean up your own wisps first (swim lane rule: never close foreign wisps).
+      Drain stale protocol messages, then process inbox by type.
+    user>
+      ```bash
+      bd mol wisp gc --closed --force
+      bd mol wisp gc --age 1h --force
+      gt mail drain --identity <rig>/witness --max-age 30m
+      gt mail inbox
+      ```
+      If >10 messages: batch by type (POLECAT_DONE, MERGED, HELP).
+      POLECAT_STARTED: acknowledge, archive.
+      POLECAT_DONE: persistent model — polecat goes idle, not nuked.
+      If pending MR: create cleanup wisp + MERGE_READY to refinery.
+      If no MR: acknowledge idle. Archive.
+      MERGED: close cleanup wisp if exists. Do NOT nuke polecat. Archive.
+      HELP: classify, resolve or escalate, archive.
+      HANDOFF: absorb context, archive.
+      SWARM_START: create swarm tracking wisp, archive.
+    accept>
+      Inbox processed, messages archived.
+  #/
+
+  # process-cleanups : llm
+    - inbox-check
+    system>
+      You are processing cleanup wisps (merge tracking and dirty state).
+    user>
+      ```bash
+      bd list --label cleanup --status=open
+      ```
+      If none, skip.
+      For each: extract polecat name, diagnose problem:
+      ```bash
+      cd polecats/<name>
+      git status --porcelain
+      git stash list
+      git log @{u}..HEAD
+      ```
+      Uncommitted: commit and push. Stashed: pop or discard.
+      Unpushed: push to origin. Then restart session.
+      If unresolvable: escalate to Deacon with RECOVERY_NEEDED.
+    accept>
+      All cleanup wisps resolved or escalated.
+  #/
+
+  # check-refinery : llm
+    - process-cleanups
+    system>
+      You are checking refinery and deacon health.
+    user>
+      Check refinery:
+      ```bash
+      gt session status <rig>/refinery
+      ```
+      If MRs waiting and refinery not running:
+      ```bash
+      gt session start <rig>/refinery
+      gt mail send <rig>/refinery -s "PATROL: Wake up" -m "MRs in queue."
+      gt mol step emit-event --channel refinery --type PATROL_WAKE \
+        --payload source=witness --payload queue_depth=<N>
+      ```
+      Queue health:
+      ```bash
+      gt refinery ready --all --json
+      ```
+      Look for: stale claimed MRs, orphaned branches, queue depth.
+      Check deacon:
+      ```bash
+      tmux has-session -t hq-deacon 2>/dev/null && echo "alive" || echo "dead"
+      ```
+      If dead: escalate to Mayor.
+    format> health
+      { refinery: str, deacon: str, queue_depth: number, stale_mrs: number }
+  #/
+
+  # survey-workers : llm
+    - check-refinery
+    system>
+      You are surveying all polecats via agent beads and tmux cross-reference.
+      Primary: discover completions from agent bead metadata.
+      Critical: zombie detection (dead session + running state).
+      Swim lane: only close wisps YOU created.
+    user>
+      Step 0 - Discover completions from beads (exit_type + completion_time).
+      Step 1 - List polecat agent beads:
+      ```bash
+      bd list --type=agent --json
+      ```
+      Step 2 - For each polecat, check agent_state.
+      Running/working: zombie detect via tmux:
+      ```bash
+      gt session status <rig>/<name> --json | jq -r '.running'
+      ```
+      Zombie (dead session, says running): check hook_bead status first.
+      If hook_bead closed: just restart session (work done, expected).
+      If dirty: escalate RECOVERY_NEEDED to Deacon.
+      Spawning: check spawn age. >10 min = stale, escalate.
+      Idle: leave alone (sandbox preserved). Check for pending MR.
+      Step 3 - Assess progress for live sessions:
+      ```bash
+      gt peek <rig>/<name> 20
+      ```
+      Step 5 - Execute nudges:
+      ```bash
+      gt nudge --mode=queue <rig>/polecats/<name> "How's progress?"
+      ```
+      Step 7 - Orphaned bead detection:
+      ```bash
+      bd list --status=in_progress --json --limit=0
+      bd list --status=hooked --json --limit=0
+      ```
+      If session dead AND directory missing: reset bead, notify Deacon.
+    format> survey
+      { total: number, alive: number, zombies: number, idle: number, nudged: number }
+  #/
+
+  # check-timer-gates : script
+    - survey-workers
+    ```bash
+    bd gate check --type=timer --escalate 2>&1
+    echo "timer_gates_checked"
+    ```
+
+    ```oracle
+    assert output contains "timer_gates_checked";
+    ```
+  #/
+
+  # check-swarm-completion : llm
+    - check-timer-gates
+    system>
+      You are checking if an active swarm batch is complete.
+    user>
+      ```bash
+      bd list --label swarm --status=open
+      ```
+      If no active swarm, skip.
+      Count completed polecats for this swarm.
+      If all complete:
+      ```bash
+      gt mail send mayor/ -s "SWARM_COMPLETE: <swarm_id>" -m "All <N> polecats merged."
+      bd close <swarm-wisp-id> --reason "All polecats merged"
+      ```
+    accept>
+      Swarm status checked.
+  #/
+
+  # patrol-cleanup : llm
+    - check-swarm-completion
+    system>
+      You are cleaning up inbox at end of patrol cycle.
+    user>
+      ```bash
+      gt mail drain --identity <rig>/witness --max-age 30m
+      gt mail inbox
+      ```
+      Archive stale processed messages.
+      Check cleanup wisp hygiene:
+      ```bash
+      bd list --label cleanup --status=open
+      ```
+      Goal: inbox nearly empty, cleanup wisps rare.
+    accept>
+      Inbox clean.
+  #/
+
+  # context-check : decision
+    - patrol-cleanup
+    system>
+      You are checking your own context usage.
+    user>
+      If context HIGH (>80%): prepare for handoff.
+      If context LOW: can continue patrolling.
+    format> verdict
+      { context: str, action: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.action in ["CONTINUE", "HANDOFF"];
+    ```
+  #/
+
+  # loop-or-exit : script
+    - context-check
+    ```bash
+    if [ "{{context-check.action}}" = "HANDOFF" ]; then
+      gt handoff -s "Witness patrol handoff" -m "Context high, cycling."
+      echo "action=HANDOFF"
+    else
+      gt mol step await-signal --agent-bead YOUR_AGENT_BEAD \
+        --backoff-base 30s --backoff-mult 2 --backoff-max 5m
+      gt patrol report --summary "Patrol cycle complete."
+      echo "action=LOOP"
+    fi
+    ```
+  #/
+
+  squash> trigger: on_complete template: patrol include_metrics: true
+
+##/

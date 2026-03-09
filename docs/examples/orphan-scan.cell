@@ -1,0 +1,172 @@
+-- Orphan Scan: Find and recover orphaned issues, molecules, and wisps.
+-- Multi-step scan with triage and recovery actions.
+
+## orphan-scan {
+  input param.scope : str default("town")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # determine-scope : script
+    user>
+      Determine scan scope (town-wide or specific rig).
+    ```bash
+    SCOPE="{{param.scope}}"
+    if [ "$SCOPE" = "town" ]; then
+      RIGS=$(gt rigs 2>/dev/null || echo "unknown")
+      echo "scope=town rigs=$RIGS"
+    else
+      echo "scope=$SCOPE rigs=$SCOPE"
+    fi
+    ```
+  #/
+
+  # scan-issues : script
+    - determine-scope
+    user>
+      Find in_progress issues with no active worker.
+    ```bash
+    ORPHANS=0
+    ISSUES=$(bd list --status=in_progress --json 2>/dev/null | jq -r '.[].id' 2>/dev/null)
+
+    for issue in $ISSUES; do
+      ASSIGNEE=$(bd show "$issue" --json 2>/dev/null | jq -r '.assignee // empty')
+      if [ -z "$ASSIGNEE" ]; then
+        ORPHANS=$((ORPHANS + 1))
+        echo "ORPHAN: $issue (no assignee)"
+        continue
+      fi
+      ALIVE=$(gt session status "$ASSIGNEE" --json 2>/dev/null | jq -r '.running' 2>/dev/null)
+      if [ "$ALIVE" != "true" ]; then
+        ORPHANS=$((ORPHANS + 1))
+        echo "ORPHAN: $issue (assignee $ASSIGNEE dead)"
+      fi
+    done
+
+    echo "orphaned_issues=$ORPHANS"
+    ```
+  #/
+
+  # scan-molecules : script
+    - determine-scope
+    user>
+      Find molecules attached to dead sessions.
+    ```bash
+    ORPHANS=0
+    MOLS=$(bd mol list --active --json 2>/dev/null | jq -r '.[].id' 2>/dev/null)
+
+    for mol in $MOLS; do
+      OWNER=$(bd mol show "$mol" --json 2>/dev/null | jq -r '.agent // empty')
+      if [ -z "$OWNER" ]; then
+        ORPHANS=$((ORPHANS + 1))
+        echo "ORPHAN_MOL: $mol (no owner)"
+        continue
+      fi
+      ALIVE=$(gt session status "$OWNER" --json 2>/dev/null | jq -r '.running' 2>/dev/null)
+      if [ "$ALIVE" != "true" ]; then
+        ORPHANS=$((ORPHANS + 1))
+        echo "ORPHAN_MOL: $mol (owner $OWNER dead)"
+      fi
+    done
+
+    echo "orphaned_molecules=$ORPHANS"
+    ```
+  #/
+
+  # scan-wisps : script
+    - determine-scope
+    user>
+      Find wisps from terminated sessions.
+    ```bash
+    ORPHANS=0
+    WISP_DIR=".beads-wisp"
+
+    if [ -d "$WISP_DIR" ]; then
+      for f in "$WISP_DIR"/*; do
+        [ -f "$f" ] || continue
+        AGE=$(( $(date +%s) - $(stat -c %Y "$f" 2>/dev/null || echo 0) ))
+        if [ "$AGE" -gt 3600 ]; then
+          ORPHANS=$((ORPHANS + 1))
+          echo "ORPHAN_WISP: $(basename $f) (age=${AGE}s)"
+        fi
+      done
+    fi
+
+    echo "orphaned_wisps=$ORPHANS"
+    ```
+  #/
+
+  # triage : llm
+    - scan-issues
+    - scan-molecules
+    - scan-wisps
+    system>
+      You are a Dog triaging orphaned work items. Classify each orphan
+      as RESET, REASSIGN, RECOVER, ESCALATE, or BURN.
+    context>
+      Issues: {{scan-issues}}
+      Molecules: {{scan-molecules}}
+      Wisps: {{scan-wisps}}
+    user>
+      Classify each orphan by severity and determine recovery action.
+      Output a plan for execute-recovery.
+    format> triage_plan
+      { actions: [{ id: str, type: str, action: str, reason: str }] }
+  #/
+
+  # execute-recovery : script
+    - triage
+    user>
+      Execute recovery actions from triage plan.
+    ```bash
+    RESET=0
+    ESCALATED=0
+    BURNED=0
+
+    # Parse triage output for RESET actions
+    RESET_IDS=$(echo '{{triage}}' | jq -r '.actions[] | select(.action=="RESET") | .id' 2>/dev/null)
+    for id in $RESET_IDS; do
+      bd update "$id" --status=open 2>/dev/null && RESET=$((RESET + 1))
+    done
+
+    ESC_IDS=$(echo '{{triage}}' | jq -r '.actions[] | select(.action=="ESCALATE") | .id' 2>/dev/null)
+    for id in $ESC_IDS; do
+      gt mail send mayor/ -s "Orphan requires escalation: $id" -m "Orphan $id needs attention"
+      ESCALATED=$((ESCALATED + 1))
+    done
+
+    echo "reset=$RESET escalated=$ESCALATED burned=$BURNED"
+    ```
+  #/
+
+  # report : script
+    - execute-recovery
+    user>
+      Report findings and signal DOG_DONE.
+    ```bash
+    echo "## Orphan Scan Report"
+    echo "Scope: {{param.scope}}"
+    echo "Issues: {{scan-issues}}"
+    echo "Molecules: {{scan-molecules}}"
+    echo "Wisps: {{scan-wisps}}"
+    echo "Recovery: {{execute-recovery}}"
+
+    gt mail send deacon/ -s "DOG_DONE: orphan-scan" -m "Task: orphan-scan
+    Scope: {{param.scope}}
+    Issues: {{scan-issues}}
+    Molecules: {{scan-molecules}}
+    Recovery: {{execute-recovery}}
+    Status: COMPLETE"
+    ```
+  #/
+
+  determine-scope -> scan-issues
+  determine-scope -> scan-molecules
+  determine-scope -> scan-wisps
+  scan-issues -> triage
+  scan-molecules -> triage
+  scan-wisps -> triage
+  triage -> execute-recovery -> report
+##/

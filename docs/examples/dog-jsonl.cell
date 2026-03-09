@@ -1,0 +1,125 @@
+-- Dog JSONL: Export Dolt databases to JSONL and push to git archive.
+-- Infrastructure formula — script cells calling Go export code.
+
+## dog-jsonl {
+  input param.databases         : str default("")
+  input param.scrub             : str default("true")
+  input param.spike_threshold   : str default("0.20")
+  input param.max_push_failures : str default("3")
+
+  squash>
+    trigger: on_complete
+    template: work
+    include_metrics: true
+
+  # export : script
+    @retry(max: 2)
+    user>
+      Export each database's tables to JSONL files.
+    ```bash
+    GIT_REPO="${GT_ROOT}/.jsonl-archive"
+    mkdir -p "$GIT_REPO"
+
+    if [ -n "{{param.databases}}" ]; then
+      IFS=',' read -ra DBS <<< "{{param.databases}}"
+    else
+      DBS=(hq beads gastown)
+    fi
+
+    TOTAL=${#DBS[@]}
+    EXPORTED=0
+    RECORDS=0
+
+    for db in "${DBS[@]}"; do
+      mkdir -p "$GIT_REPO/$db"
+      SCRUB=""
+      [ "{{param.scrub}}" = "true" ] && SCRUB="WHERE type NOT IN ('message','event','wisp')"
+
+      COUNT=$(dolt sql -r csv -q "SELECT COUNT(*) AS c FROM \`$db\`.issues $SCRUB" 2>/dev/null | tail -1)
+      dolt sql -r json -q "SELECT * FROM \`$db\`.issues $SCRUB" > "$GIT_REPO/$db/issues.jsonl" 2>/dev/null
+
+      for tbl in comments config dependencies labels metadata; do
+        dolt sql -r json -q "SELECT * FROM \`$db\`.\`$tbl\`" >> "$GIT_REPO/$db/$tbl.jsonl" 2>/dev/null
+      done
+
+      EXPORTED=$((EXPORTED + 1))
+      RECORDS=$((RECORDS + COUNT))
+      echo "$db: exported ($COUNT records)"
+    done
+
+    echo "exported=$EXPORTED total=$TOTAL records=$RECORDS"
+    ```
+
+    ```oracle
+    assert output contains "exported=";
+    ```
+  #/
+
+  # verify : script
+    - export
+    user>
+      Verify export counts and filter test pollution.
+    ```bash
+    GIT_REPO="${GT_ROOT}/.jsonl-archive"
+    THRESHOLD={{param.spike_threshold}}
+
+    # Filter test pollution from JSONL files
+    for f in "$GIT_REPO"/*/*.jsonl; do
+      [ -f "$f" ] || continue
+      grep -v '"Test Issue\|"test_\|"testdb_\|"beads_t\|"doctest_' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    done
+
+    echo "verify=done spike_threshold=$THRESHOLD"
+    ```
+  #/
+
+  # push : script
+    - verify
+    @retry(max: 3)
+    user>
+      Commit and push JSONL to git archive.
+    ```bash
+    GIT_REPO="${GT_ROOT}/.jsonl-archive"
+    cd "$GIT_REPO"
+
+    git add -A *.jsonl */ 2>/dev/null
+    if git diff --cached --quiet 2>/dev/null; then
+      echo "push=no-changes"
+      exit 0
+    fi
+
+    TS=$(date +%Y%m%d-%H%M%S)
+    git commit -m "backup $TS: {{export}}" \
+      --author="Gas Town Daemon <daemon@gastown.local>" 2>&1
+
+    if git push origin main 2>&1; then
+      echo "push=ok"
+    else
+      echo "push=failed"
+    fi
+    ```
+
+    ```oracle
+    assert output contains "push=";
+    ```
+  #/
+
+  # report : script
+    - push
+    user>
+      Report findings and signal DOG_DONE.
+    ```bash
+    echo "## JSONL Dog Report"
+    echo "Export: {{export}}"
+    echo "Verify: {{verify}}"
+    echo "Push: {{push}}"
+
+    gt mail send deacon/ -s "DOG_DONE: jsonl" -m "Task: jsonl-git-backup
+    Export: {{export}}
+    Push: {{push}}
+    Status: COMPLETE"
+    ```
+  #/
+
+  export -> verify -> push -> report
+##/

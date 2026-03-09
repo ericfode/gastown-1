@@ -1,0 +1,137 @@
+-- Polecat Conflict Resolve: Rebase MR branch, resolve conflicts, push to base.
+-- Serialized via merge-slot gate to prevent racing.
+
+## polecat-conflict-resolve {
+  input param.task        : str
+  input param.original_mr : str
+  input param.branch      : str
+  input param.base_branch : str default("main")
+
+  # load-task : script
+    user>
+      Load task metadata and extract conflict context.
+    ```bash
+    gt prime
+    bd prime
+    gt hook
+    bd show {{param.task}} --json
+    ```
+  #/
+
+  # acquire-slot : script
+    - load-task
+    @retry(max: 3)
+    user>
+      Acquire merge slot for exclusive push access.
+    ```bash
+    bd merge-slot acquire --holder=$(whoami) --wait --json
+    ```
+
+    ```oracle
+    assert output contains "holder";
+    ```
+  #/
+
+  # checkout-branch : script
+    - acquire-slot
+    user>
+      Fetch and checkout the conflicting branch.
+    ```bash
+    git fetch origin
+    git fetch origin {{param.branch}}:refs/remotes/origin/{{param.branch}}
+    git checkout -b temp-resolve origin/{{param.branch}}
+    git log --oneline -5
+    ```
+  #/
+
+  # rebase-resolve : script
+    - checkout-branch
+    user>
+      Rebase onto base branch and resolve conflicts.
+    ```bash
+    git rebase origin/{{param.base_branch}} 2>&1
+    RESULT=$?
+    if [ $RESULT -ne 0 ]; then
+      echo "CONFLICT — manual resolution needed"
+      git status
+      exit 1
+    fi
+    echo "rebase=clean"
+    git log --oneline origin/{{param.base_branch}}..HEAD
+    ```
+  #/
+
+  # run-tests : script
+    - rebase-resolve
+    user>
+      Verify resolution passes tests and build.
+    ```bash
+    go test ./... 2>&1
+    TEST_RESULT=$?
+    go build ./... 2>&1
+    BUILD_RESULT=$?
+
+    if [ $TEST_RESULT -ne 0 ] || [ $BUILD_RESULT -ne 0 ]; then
+      echo "FAIL: tests=$TEST_RESULT build=$BUILD_RESULT"
+      exit 1
+    fi
+    echo "tests=pass build=pass"
+    ```
+
+    ```oracle
+    assert output contains "pass";
+    ```
+  #/
+
+  # push-to-main : script
+    - run-tests
+    @retry(max: 2)
+    user>
+      Push resolved branch directly to base branch.
+    ```bash
+    git fetch origin
+    git rebase origin/{{param.base_branch}} 2>&1
+    git push origin temp-resolve:{{param.base_branch}} 2>&1
+    echo "pushed to {{param.base_branch}}"
+    git log origin/{{param.base_branch}} --oneline -3
+    ```
+  #/
+
+  # close-beads : script
+    - push-to-main
+    user>
+      Close original MR and task beads.
+    ```bash
+    bd close {{param.original_mr}} --reason="merged after conflict resolution"
+    bd sync
+    echo "closed={{param.original_mr}}"
+    ```
+  #/
+
+  # release-slot : script
+    - close-beads
+    user>
+      Release merge slot for next polecat.
+    ```bash
+    bd merge-slot release --holder=$(whoami) --json
+    echo "slot=released"
+    ```
+  #/
+
+  # cleanup-and-exit : script
+    - release-slot
+    user>
+      Clean up workspace and close task.
+    ```bash
+    git checkout {{param.base_branch}}
+    git branch -D temp-resolve 2>/dev/null
+    git fetch origin
+    git reset --hard origin/{{param.base_branch}}
+    bd close {{param.task}} --reason="Conflicts resolved and merged to {{param.base_branch}}"
+    gt done
+    echo "done"
+    ```
+  #/
+
+  load-task -> acquire-slot -> checkout-branch -> rebase-resolve -> run-tests -> push-to-main -> close-beads -> release-slot -> cleanup-and-exit
+##/

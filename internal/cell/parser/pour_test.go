@@ -117,6 +117,7 @@ var batch1Files = []string{
 	"hello.cell", "rule-of-five.cell", "survey.cell", "security-audit.cell",
 	"shiny.cell", "shiny-secure.cell", "shiny-enterprise.cell",
 	"dog-backup.cell", "dog-phantom-db.cell", "town-shutdown.cell",
+	"dog-compactor.cell", "dog-jsonl.cell", "dog-stale-db.cell",
 }
 
 // Batch 2: medium files
@@ -125,6 +126,9 @@ var batch2Files = []string{
 	"dog-reaper.cell", "gastown-boot.cell", "session-gc.cell",
 	"convoy-cleanup.cell", "convoy-feed.cell", "dep-propagate.cell",
 	"digest-generate.cell", "polecat-lease.cell",
+	"beads-release.cell", "gastown-release.cell",
+	"polecat-review-pr.cell", "polecat-work.cell",
+	"sync-workspace.cell",
 }
 
 // Batch 3: complex files
@@ -133,6 +137,9 @@ var batch3Files = []string{
 	"polecat-code-review.cell", "idea-to-plan.cell", "shutdown-dance.cell",
 	"deacon-patrol.cell", "cell-migration.cell", "cell-reader.cell",
 	"cell-zero.cell", "towers-of-hanoi.cell",
+	"orphan-scan.cell", "polecat-conflict-resolve.cell",
+	"refinery-patrol.cell", "witness-patrol.cell",
+	"towers-of-hanoi-7.cell", "towers-of-hanoi-9.cell", "towers-of-hanoi-10.cell",
 }
 
 func TestPourBatch1(t *testing.T) {
