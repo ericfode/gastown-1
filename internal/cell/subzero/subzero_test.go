@@ -232,7 +232,7 @@ func TestRunHelloCellFile(t *testing.T) {
 
 	prog, err := parser.Parse(string(src))
 	if err != nil {
-		t.Skip("parse error (braceless syntax not yet supported):", err)
+		t.Fatal("parse error:", err)
 	}
 	if len(prog.Molecules) == 0 {
 		t.Skip("no molecules parsed")

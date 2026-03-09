@@ -103,7 +103,10 @@ func (p *Parser) parseMolecule() *Molecule {
 	p.expect(TokenDoubleHash) // ##
 
 	name := p.expectIdent()
-	p.expect(TokenLBrace) // {
+	// Accept both ## name { and ## name (braceless) syntax
+	if p.check(TokenLBrace) {
+		p.advance() // consume optional {
+	}
 	p.skipNewlines()
 
 	mol := &Molecule{Name: name, Pos: pos}
