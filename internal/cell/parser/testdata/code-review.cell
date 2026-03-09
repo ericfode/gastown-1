@@ -1,0 +1,53 @@
+-- Code review convoy example from the Cell spec
+## code-review {
+  input param.pr     : number required_unless(param.files, param.branch)
+  input param.files  : str    required_unless(param.pr, param.branch)
+  input param.branch : str    required_unless(param.pr, param.files)
+
+  prompt@ review-base
+    You are a specialized code reviewer in a convoy review.
+    Your focus: {{aspect.focus}}
+
+  map # leg : llm over {{param.aspects}} as aspect
+    @ cost(max: 5000)
+    @ quality(min: "good")
+    system>
+      {{@review-base}}
+    user>
+      {{aspect.description}}
+    format> json
+      { "findings": [{ "severity": "P0" | "P1" | "P2",
+                        "file": str, "description": str }] }
+  #/
+
+  # synthesis : llm
+    - leg.*
+    @ cost(max: 8000)
+    @ quality(min: "excellent")
+    @ model(value: "opus")
+    each> findings in {{leg.*}}
+      ### {{findings.aspect.title}}
+      {{findings}}
+    user>
+      Synthesize: deduplicate, prioritize, produce verdict.
+    format> json
+      { "verdict": "approve" | "request-changes" | "comment",
+        "blocking": [_], "suggestions": [_] }
+  #/
+
+  preset gate {
+    aspects = [
+      { id: "security", focus: "vulnerabilities", description: "..." },
+      { id: "smells",   focus: "anti-patterns",   description: "..." },
+      { id: "wiring",   focus: "unused deps",     description: "..." }
+    ]
+  }
+
+  preset full {
+    aspects = [
+      { id: "correctness",  focus: "logic errors",    description: "..." },
+      { id: "performance",  focus: "bottlenecks",     description: "..." },
+      { id: "security",     focus: "vulnerabilities",  description: "..." }
+    ]
+  }
+##/

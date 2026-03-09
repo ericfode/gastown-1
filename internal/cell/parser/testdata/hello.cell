@@ -1,0 +1,30 @@
+-- A simple Cell example: sequential workflow
+## shiny {
+  input param.feature : str required
+
+  # design : llm
+    user>
+      Design the architecture for {{param.feature}}.
+      Consider edge cases and trade-offs.
+    accept>
+      Design doc committed covering approach and files to change.
+  #/
+
+  # implement : llm
+    - design
+    user>
+      Implement {{param.feature}} per the design: {{design}}
+    accept>
+      All files modified and committed.
+  #/
+
+  # review : llm
+    - implement
+    user>
+      Review the implementation. Check for bugs, readability, security.
+    accept>
+      Self-review complete, no obvious issues.
+  #/
+
+  design -> implement -> review
+##/
