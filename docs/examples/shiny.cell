@@ -1,0 +1,92 @@
+-- Shiny (Feature Workflow) — Cell translation of shiny.formula.toml
+-- Engineer in a Box: design → implement → review → test → submit.
+-- Sequential pipeline — each step depends on the previous.
+
+## shiny
+
+  input param.feature : str required
+  input param.assignee : str default("self")
+
+  # design : llm
+    @cost(max: 8000)
+    system>
+      You are a senior software engineer. Design before you code.
+    user>
+      Design {{param.feature}}.
+      Think carefully about architecture. Consider:
+      - How does this fit into the existing system?
+      - What are the edge cases? What could go wrong?
+      - Is there a simpler approach?
+    accept>
+      Design doc committed covering approach, trade-offs, and files to change.
+    format> design
+      { approach: str, tradeoffs: [str], files: [str], edge_cases: [str] }
+  #/
+
+  # implement : llm
+    - design
+    @cost(max: 16000)
+    system>
+      You are a senior software engineer. Follow the design. Keep it simple.
+    context>
+      Design for {{param.feature}}:
+      {{design : json}}
+    user>
+      Implement {{param.feature}} following the design.
+      Write the code. Don't gold-plate.
+    accept>
+      All files from the design doc are modified/created and committed.
+  #/
+
+  # review : llm
+    - implement
+    @cost(max: 8000)
+    system>
+      You are a code reviewer. Be thorough but fair.
+    context>
+      Implementation of {{param.feature}}:
+      {{implement}}
+    user>
+      Review the implementation. Check:
+      - Does it match the design?
+      - Are there obvious bugs?
+      - Is it readable and maintainable?
+      - Are there security concerns?
+    accept>
+      Self-review complete, no obvious bugs, code is readable and secure.
+    format> review
+      { verdict: "pass" | "needs_changes", issues: [str], notes: [str] }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["verdict", "issues"]);
+    assert output.verdict in ["pass", "needs_changes"];
+    reject if output.verdict == "needs_changes" and len(output.issues) == 0;
+    ```
+  #/
+
+  # test : script
+    - review
+    ```bash
+    echo "Running tests for {{param.feature}}..."
+    go test ./... 2>&1
+    echo "Test run complete."
+    ```
+    accept>
+      All tests pass, no regressions, test coverage for new code.
+  #/
+
+  # submit : llm
+    - test
+    @cost(max: 4000)
+    system>
+      You are finalizing work for merge.
+    user>
+      Submit {{param.feature}} for merge.
+      Final check: git status, git diff.
+      Commit with clear message. Push to feature branch.
+    accept>
+      Clean git status, clear commit message, code pushed to feature branch.
+  #/
+
+##/
