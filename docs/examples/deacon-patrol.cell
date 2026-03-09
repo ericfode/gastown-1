@@ -1,0 +1,300 @@
+-- Deacon Patrol — Mayor's daemon patrol loop (26 steps).
+-- The most complex molecule in Gas Town. Continuous patrol cycle.
+-- Demonstrates: long sequential pipelines, script/LLM mix, decision cells,
+-- parallel groups, patrol loop pattern, context management.
+--
+-- Step groups:
+-- 1. Heartbeat + inbox (startup)
+-- 2. Cleanup (orphan processes, test pollution)
+-- 3. Gate evaluation + dispatch
+-- 4. Health monitoring (convoys, deps, notifications)
+-- 5. Infrastructure (dolt, zombies, plugins, dogs)
+-- 6. Compaction (sessions, wisps, reports)
+-- 7. Wrap-up (costs, digest, logs, context, loop)
+
+## deacon-patrol
+
+  -- === Group 1: Startup ===
+
+  # heartbeat : script
+    ```bash
+    gt deacon heartbeat "starting patrol cycle"
+    ```
+  #/
+
+  # inbox-check : llm
+    - heartbeat
+    @cost(max: 8000)
+    system>
+      You are the Deacon handling callbacks from agents.
+      Clean up old wisps, then process inbox messages.
+      Handle: HELP/escalation, LIFECYCLE, WARRANT results.
+      Archive each message after handling.
+    user>
+      ```bash
+      bd mol wisp gc --closed --force
+      bd mol wisp gc --age 1h --force
+      gt mail inbox
+      ```
+      Process each message by type. Archive when done.
+    accept>
+      All messages processed and archived.
+  #/
+
+  -- === Group 2: Cleanup ===
+
+  # orphan-process-cleanup : script
+    - inbox-check
+    ```bash
+    gt doctor -v 2>&1
+    # Kill orphan Claude processes without tmux parents
+    gt doctor --fix 2>/dev/null
+    echo "orphan_cleanup_done"
+    ```
+  #/
+
+  # test-pollution-cleanup : script
+    - orphan-process-cleanup
+    @cost(max: 4000)
+    ```bash
+    gt dolt status 2>&1
+    # Check for orphan test databases
+    gt dolt cleanup 2>/dev/null
+    echo "test_cleanup_done"
+    ```
+  #/
+
+  -- === Group 3: Gate evaluation + dispatch ===
+
+  # gate-evaluation : llm
+    - test-pollution-cleanup
+    @cost(max: 4000)
+    system>
+      You evaluate molecules waiting at gates (approval, retry, timeout).
+    user>
+      Check for gated molecules:
+      ```bash
+      bd ready --json
+      ```
+      For each gated molecule, evaluate whether it should proceed.
+    format> gates
+      { evaluated: number, released: number, held: number }
+  #/
+
+  # dispatch-gated-molecules : script
+    - gate-evaluation
+    ```bash
+    # Dispatch any molecules that passed gate evaluation
+    echo "dispatch_complete"
+    ```
+  #/
+
+  -- === Group 4: Health monitoring ===
+
+  # check-convoy-completion : script
+    - dispatch-gated-molecules
+    ```bash
+    gt convoy list --json 2>/dev/null | head -20
+    echo "convoy_check_done"
+    ```
+  #/
+
+  # resolve-external-deps : script
+    - check-convoy-completion
+    ```bash
+    bd ready --json 2>/dev/null | head -20
+    echo "deps_resolved"
+    ```
+  #/
+
+  # fire-notifications : script
+    - resolve-external-deps
+    ```bash
+    echo "notifications_done"
+    ```
+  #/
+
+  -- === Group 5: Infrastructure (some can run in parallel) ===
+
+  # heartbeat-mid : script
+    - fire-notifications
+    ```bash
+    gt deacon heartbeat "mid-patrol"
+    ```
+  #/
+
+  # health-scan : llm
+    - heartbeat-mid
+    @cost(max: 6000)
+    system>
+      You are scanning rig health: sessions, heartbeats, activity.
+      Check each rig's witness, refinery, and polecats.
+      Only report problems. Silence = healthy.
+    user>
+      For each rig, check:
+      - Witness session alive + heartbeat fresh
+      - Refinery session alive + heartbeat fresh
+      - Active polecats status
+      Restart any dead critical sessions.
+    format> health
+      { rigs_checked: number, issues: [{ rig: str, issue: str }] }
+  #/
+
+  # dolt-health : script
+    - heartbeat-mid
+    ```bash
+    gt dolt status 2>&1
+    echo "dolt_health_checked"
+    ```
+
+    ```oracle
+    reject if output contains "unreachable";
+    ```
+  #/
+
+  # zombie-scan : script
+    - heartbeat-mid
+    ```bash
+    # Check for zombie sessions (alive but not working)
+    for session in $(tmux list-sessions -F "#{session_name}" 2>/dev/null); do
+      echo "session=$session"
+    done
+    echo "zombie_scan_done"
+    ```
+  #/
+
+  # plugin-run : script
+    - heartbeat-mid
+    ```bash
+    # Run registered daemon plugins
+    echo "plugins_run"
+    ```
+  #/
+
+  # dog-pool-maintenance : script
+    - heartbeat-mid
+    ```bash
+    echo "dog_pool_ok"
+    ```
+  #/
+
+  # dog-health-check : script
+    - dog-pool-maintenance
+    ```bash
+    echo "dogs_healthy"
+    ```
+  #/
+
+  -- === Group 6: Compaction ===
+
+  # orphan-check : script
+    - health-scan
+    - dolt-health
+    - zombie-scan
+    - plugin-run
+    - dog-health-check
+    ```bash
+    echo "orphan_check_done"
+    ```
+  #/
+
+  # session-gc : script
+    - orphan-check
+    ```bash
+    gt doctor --fix 2>/dev/null
+    echo "session_gc_done"
+    ```
+  #/
+
+  # wisp-compact : script
+    - session-gc
+    ```bash
+    bd mol wisp gc --closed --force 2>/dev/null
+    echo "wisp_compact_done"
+    ```
+  #/
+
+  # compact-report : llm
+    - wisp-compact
+    @cost(max: 2000)
+    system>
+      You are summarizing compaction results. Be terse.
+    user>
+      Summarize: sessions gc'd, wisps compacted, orphans found.
+    format> compact
+      { sessions_gc: number, wisps_compacted: number, orphans: number }
+  #/
+
+  -- === Group 7: Wrap-up ===
+
+  # costs-digest : script
+    - compact-report
+    ```bash
+    echo "costs_logged"
+    ```
+  #/
+
+  # patrol-digest : llm
+    - costs-digest
+    @cost(max: 4000)
+    system>
+      You are writing a patrol cycle digest. One paragraph max.
+    user>
+      Summarize this patrol cycle:
+      - Gates evaluated: {{gate-evaluation.evaluated}}
+      - Health issues: {{health-scan.issues}}
+      - Compaction: {{compact-report}}
+    format> digest
+      { summary: str, issues_found: number, actions_taken: number }
+  #/
+
+  # log-maintenance : script
+    - patrol-digest
+    ```bash
+    gt deacon heartbeat "patrol complete"
+    echo "logs_maintained"
+    ```
+  #/
+
+  # patrol-cleanup : script
+    - log-maintenance
+    ```bash
+    bd mol wisp gc --closed --force 2>/dev/null
+    echo "cleanup_done"
+    ```
+  #/
+
+  # context-check : decision
+    - patrol-cleanup
+    @cost(max: 2000)
+    system>
+      You are checking whether the Deacon should loop or exit.
+    user>
+      Check context usage. If context is >80% full, exit for handoff.
+      Otherwise, loop for another patrol cycle.
+    format> verdict
+      { action: "LOOP" | "EXIT", context_pct: number, reason: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.action in ["LOOP", "EXIT"];
+    ```
+  #/
+
+  # loop-or-exit : script
+    - context-check
+    ```bash
+    if [ "{{context-check.action}}" = "EXIT" ]; then
+      gt mail send mayor/ -s "Deacon handoff" -m "Context at {{context-check.context_pct}}%. Handing off."
+      echo "action=EXIT"
+    else
+      echo "action=LOOP"
+      sleep 60
+      echo "Ready for next patrol cycle."
+    fi
+    ```
+  #/
+
+  squash> trigger: on_complete template: patrol include_metrics: true
+
+##/
