@@ -98,6 +98,66 @@ func TestScriptExecutorBlocksDangerous(t *testing.T) {
 	}
 }
 
+func TestScriptExecutorJSONFields(t *testing.T) {
+	exec := &ScriptExecutor{}
+	result, err := exec.Execute(context.Background(), &CellExec{
+		Name:   "json-script",
+		Type:   "script",
+		Script: `echo '{"action":"deploy","target":"prod"}'`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Fields == nil {
+		t.Fatal("expected Fields to be populated for JSON output")
+	}
+	if result.Fields["action"] != "deploy" {
+		t.Errorf("Fields[action] = %q, want %q", result.Fields["action"], "deploy")
+	}
+	if result.Fields["target"] != "prod" {
+		t.Errorf("Fields[target] = %q, want %q", result.Fields["target"], "prod")
+	}
+}
+
+func TestScriptExecutorNonJSONFields(t *testing.T) {
+	exec := &ScriptExecutor{}
+	result, err := exec.Execute(context.Background(), &CellExec{
+		Name:   "text-script",
+		Type:   "script",
+		Script: "echo 'just plain text'",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Non-JSON output should have empty (not nil) Fields
+	if result.Fields == nil {
+		t.Fatal("expected Fields to be non-nil (empty map)")
+	}
+	if len(result.Fields) != 0 {
+		t.Errorf("expected empty Fields for non-JSON output, got %v", result.Fields)
+	}
+}
+
+func TestScriptFieldsInRefResolution(t *testing.T) {
+	// End-to-end: script outputs JSON, downstream cell resolves {{script.field}}
+	exec := &ScriptExecutor{}
+	result, err := exec.Execute(context.Background(), &CellExec{
+		Name:   "decide",
+		Type:   "script",
+		Script: `echo '{"action":"deploy","env":"staging"}'`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outputs := map[string]*CellResult{"decide": result}
+	resolved := ResolveRefs("Do {{decide.action}} to {{decide.env}}", outputs, nil)
+	want := "Do deploy to staging"
+	if resolved != want {
+		t.Errorf("ResolveRefs = %q, want %q", resolved, want)
+	}
+}
+
 func TestScriptExecutorTimeout(t *testing.T) {
 	exec := &ScriptExecutor{TimeoutSec: 1}
 	ctx := context.Background()

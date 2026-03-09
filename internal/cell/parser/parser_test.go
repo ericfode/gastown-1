@@ -739,3 +739,67 @@ func TestValidateHumanCellForbiddenSections(t *testing.T) {
 		t.Error("expected validation error for human cell with system>")
 	}
 }
+
+func TestValidateFieldRefAgainstFormat(t *testing.T) {
+	source := `## test {
+  # decide : llm
+    user>
+      Make a decision.
+    format> decision
+      { action: str, reason: str }
+  #/
+
+  # execute : script
+    - decide.action
+    ` + "```" + `bash
+    echo "doing {{decide.action}}"
+    ` + "```" + `
+  #/
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	errs := Validate(prog)
+	// action is declared in format> — no warnings expected
+	for _, e := range errs {
+		if strings.Contains(e.Message, "not declared in format>") {
+			t.Errorf("unexpected field warning: %s", e.Message)
+		}
+	}
+}
+
+func TestValidateFieldRefUnknownField(t *testing.T) {
+	source := `## test {
+  # decide : llm
+    user>
+      Make a decision.
+    format> decision
+      { action: str, reason: str }
+  #/
+
+  # execute : llm
+    - decide.typo
+    user>
+      Do {{decide.bogus}}
+  #/
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	errs := Validate(prog)
+	warnings := 0
+	for _, e := range errs {
+		if strings.Contains(e.Message, "not declared in format>") {
+			warnings++
+		}
+	}
+	if warnings < 2 {
+		t.Errorf("expected at least 2 field warnings (ref decl + inline), got %d", warnings)
+	}
+}

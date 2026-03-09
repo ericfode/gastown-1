@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -89,7 +90,21 @@ func validateMolecule(mol *Molecule, prog *Program) []*ValidationError {
 		fragments[f.Name] = f.Pos
 	}
 
-	// Validate cell references and human cell constraints
+	// Build format field registry: cell name -> set of declared field names
+	formatFields := make(map[string]map[string]bool)
+	for _, c := range mol.Cells {
+		for _, ps := range c.Prompts {
+			if ps.Format != nil && len(ps.Format.Fields) > 0 {
+				fields := make(map[string]bool)
+				for _, f := range ps.Format.Fields {
+					fields[f.Name] = true
+				}
+				formatFields[c.Name] = fields
+			}
+		}
+	}
+
+	// Validate cell references, field references, and human cell constraints
 	for _, c := range mol.Cells {
 		for _, ref := range c.Refs {
 			refName := ref.Name
@@ -99,6 +114,18 @@ func validateMolecule(mol *Molecule, prog *Program) []*ValidationError {
 					Severity: "error",
 					Pos:      ref.Pos,
 				})
+			} else if ref.Field != "" && ref.Field != "*" {
+				// Check field reference against format> spec
+				if fields, hasFormat := formatFields[refName]; hasFormat {
+					if !fields[ref.Field] {
+						errs = append(errs, &ValidationError{
+							Message:  fmt.Sprintf("field %q not declared in format> of cell %q (available: %s)",
+								ref.Field, refName, formatFieldNames(fields)),
+							Severity: "warning",
+							Pos:      ref.Pos,
+						})
+					}
+				}
 			}
 		}
 		if c.Type.Name == "human" {
@@ -135,6 +162,9 @@ func validateMolecule(mol *Molecule, prog *Program) []*ValidationError {
 			}
 		}
 	}
+
+	// Validate {{ref.field}} patterns in prompt text and scripts
+	errs = append(errs, validateInlineFieldRefs(mol, cells, formatFields)...)
 
 	// Build DAG and check for cycles
 	errs = append(errs, checkDAGCycles(mol)...)
@@ -261,6 +291,85 @@ func validateHumanCell(c *Cell) []*ValidationError {
 	}
 
 	return errs
+}
+
+// inlineRefPattern matches {{cellname.field}} in prompt text (excludes param.X).
+var inlineRefPattern = regexp.MustCompile(`\{\{([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\}\}`)
+
+// validateInlineFieldRefs scans prompt text for {{ref.field}} and warns on unknown fields.
+func validateInlineFieldRefs(mol *Molecule, cells map[string]Position, formatFields map[string]map[string]bool) []*ValidationError {
+	var errs []*ValidationError
+
+	for _, c := range mol.Cells {
+		// Scan prompt lines
+		for _, ps := range c.Prompts {
+			for _, line := range ps.Lines {
+				matches := inlineRefPattern.FindAllStringSubmatch(line, -1)
+				for _, m := range matches {
+					cellName, field := m[1], m[2]
+					if cellName == "param" {
+						continue
+					}
+					if _, ok := cells[cellName]; !ok {
+						continue // Already caught by ref validation
+					}
+					if fields, hasFormat := formatFields[cellName]; hasFormat {
+						if !fields[field] {
+							errs = append(errs, &ValidationError{
+								Message:  fmt.Sprintf("field %q not declared in format> of cell %q (available: %s)",
+									field, cellName, formatFieldNames(fields)),
+								Severity: "warning",
+								Pos:      ps.Pos,
+							})
+						}
+					}
+				}
+			}
+		}
+
+		// Scan script body
+		if c.ScriptBody != "" {
+			matches := inlineRefPattern.FindAllStringSubmatch(c.ScriptBody, -1)
+			for _, m := range matches {
+				cellName, field := m[1], m[2]
+				if cellName == "param" {
+					continue
+				}
+				if _, ok := cells[cellName]; !ok {
+					continue
+				}
+				if fields, hasFormat := formatFields[cellName]; hasFormat {
+					if !fields[field] {
+						errs = append(errs, &ValidationError{
+							Message:  fmt.Sprintf("field %q not declared in format> of cell %q (available: %s)",
+								field, cellName, formatFieldNames(fields)),
+							Severity: "warning",
+							Pos:      c.Pos,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return errs
+}
+
+// formatFieldNames returns a sorted comma-separated list of field names.
+func formatFieldNames(fields map[string]bool) string {
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	// Sort for deterministic output
+	for i := 0; i < len(names); i++ {
+		for j := i + 1; j < len(names); j++ {
+			if names[j] < names[i] {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // validateInputs checks input declarations for consistency.

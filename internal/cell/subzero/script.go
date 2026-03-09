@@ -64,5 +64,6 @@ func (s *ScriptExecutor) Execute(ctx context.Context, cell *CellExec) (*CellResu
 		return nil, fmt.Errorf("script %q failed: %w\noutput: %s", cell.Name, err, string(out))
 	}
 
-	return &CellResult{Output: string(out)}, nil
+	output := string(out)
+	return &CellResult{Output: output, Fields: parseJSONFields(output)}, nil
 }
