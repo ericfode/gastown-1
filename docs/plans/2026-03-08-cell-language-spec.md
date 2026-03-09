@@ -84,16 +84,19 @@ reduce_cell   = "reduce" "#" IDENT ":" cell_type "over" REF "as" IDENT
                 "with" IDENT "=" value cell_body "#/" ;
 
 cell_body     = { ref_decl | annotation | prompt_section
-                | oracle_block | accept_block } ;
+                | oracle_block | accept_block | vars_block } ;
 
 cell_type     = "llm" | "script" | "oracle" | "decision" | "meta"
               | "distilled"
               | "text" | "inventory" | "synthesis" | "code"
-              | "laws" | "boundaries" | "diagram" ;
+              | "laws" | "boundaries" | "diagram"
+              | "mol" "(" IDENT ")" ;           (* sub-molecule invocation *)
 
 (* === Cell body elements === *)
 
-ref_decl      = "-" IDENT ( "." IDENT )? ;
+ref_decl      = "-" IDENT ( "." IDENT )? [ "(" "or" ")" ] ;
+
+vars_block    = "vars>" { IDENT "=" value } ;
 
 annotation    = "@" IDENT "(" annot_args ")" ;
 annot_args    = IDENT ":" value { "," IDENT ":" value } ;
@@ -928,7 +931,164 @@ formula composition, and selector-based application.
 
 ---
 
-## 20. Open Questions
+## 20. Sub-Molecule Invocation
+
+A cell can reference another molecule as its computation. The molecule is
+poured as a nested execution — its inputs come from the parent cell's refs,
+its output is the digest.
+
+```cell
+## idea-to-plan {
+  # gather-requirements : llm
+    user>
+      Gather requirements for {{param.idea}}.
+  #/
+
+  # generate-plan : mol(design)
+    - gather-requirements
+    vars>
+      problem = {{gather-requirements}}
+      scope = "medium"
+  #/
+
+  # review-plan : llm
+    - generate-plan
+    user>
+      Review this plan: {{generate-plan}}
+      Verdict: APPROVE or REVISE with feedback.
+    format> json
+      { "verdict": "approve" | "revise", "feedback": str }
+  #/
+
+  gather-requirements -> generate-plan -> review-plan
+##/
+```
+
+`# name : mol(molecule-name)` declares a cell whose computation is another
+molecule. `vars>` passes parameters. The nested molecule pours, executes,
+squashes, and the digest becomes this cell's output.
+
+### Grammar Addition
+
+```ebnf
+cell_type     = ... | "mol" "(" IDENT ")" ;
+vars_block    = "vars>" { IDENT "=" value } ;
+cell_body     = { ref_decl | annotation | prompt_section
+                | oracle_block | accept_block | vars_block } ;
+```
+
+---
+
+## 21. Wire Modifiers: OR-Join and Conditional Branching
+
+By default, a cell waits for ALL upstream refs (AND-join). Two modifiers
+change this:
+
+### OR-Join
+
+```cell
+-- Cell executes when ANY predecessor completes (not all).
+# pardon : llm
+  - eval-a (or)
+  - eval-b (or)
+  - eval-c (or)
+  user>
+    One of the evaluations completed. Proceed with shutdown.
+#/
+```
+
+`- ref (or)` marks a ref as OR-join. The cell fires when at least one
+OR-ref delivers a value. Useful for shutdown dances and fallback patterns.
+
+### Conditional Wires
+
+```cell
+-- Wire only activates if a predicate on the source output passes.
+review -> ? verdict-is-revise -> generate-plan    -- loop back if REVISE
+review -> ? verdict-is-approve -> submit          -- proceed if APPROVE
+```
+
+Combined with oracle-gated wires, this gives conditional branching.
+The oracle on the wire acts as the branch predicate:
+
+```cell
+# verdict-is-revise : oracle
+  ``` oracle
+  json_parse(v);
+  assert v.verdict == "revise";
+  ```
+#/
+
+# verdict-is-approve : oracle
+  ``` oracle
+  json_parse(v);
+  assert v.verdict == "approve";
+  ```
+#/
+```
+
+When `review` completes, both wires evaluate their oracle. Only the
+matching branch fires. This is **conditional branching via oracle gates**,
+not a control flow primitive — the DAG structure is fixed, but oracle
+verdicts determine which paths actually propagate.
+
+### Loop-Back (Patrol Pattern)
+
+Patrols and iterative refinement use conditional wires to loop back:
+
+```cell
+## patrol {
+  # scan : script
+    ``` sh
+    gt dolt status --json
+    ```
+  #/
+
+  # triage : llm
+    - scan
+    user>
+      Assess: {{scan : json}}
+      Verdict: clean (nothing to do), act (take action), escalate.
+    format> json
+      { "verdict": "clean" | "act" | "escalate", "details": str }
+  #/
+
+  # act : llm
+    - triage
+    user>
+      Execute remediation: {{triage.details}}
+  #/
+
+  # wait-and-rescan : script
+    - act
+    ``` sh
+    sleep {{param.interval}}
+    ```
+  #/
+
+  scan -> triage
+  triage -> ? verdict-is-act -> act -> wait-and-rescan
+  wait-and-rescan -> scan                          -- loop back
+
+  triage -> ? verdict-is-clean -> done
+  triage -> ? verdict-is-escalate -> escalate
+##/
+```
+
+**Important**: within a single molecule pour, the loop is bounded by the
+runtime's generation limit (`--max-loops N`). Unbounded loops use the
+stratified evolution model: each loop iteration is a new generation
+(pour → execute → squash → distill → pour).
+
+### Grammar Additions
+
+```ebnf
+ref_decl      = "-" IDENT ( "." IDENT )? [ "(" "or" ")" ] ;
+```
+
+---
+
+## 22. Open Questions
 
 1. **Parser implementation language.** Go (matches Gas Town), Rust (matches bd), or tree-sitter grammar (editor support)?
 2. **TOML migration tooling.** Auto-convert existing formulas or manual migration?
