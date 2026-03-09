@@ -82,6 +82,11 @@ func (r *resolver) resolveProgram(prog *Program, depth int) {
 	for _, mol := range prog.Molecules {
 		r.resolveMolecule(mol, depth)
 	}
+
+	// After all imports are resolved, apply recipes.
+	if depth == 0 {
+		r.applyRecipes(prog)
+	}
 }
 
 func (r *resolver) resolveMolecule(mol *Molecule, depth int) {
@@ -184,6 +189,57 @@ func (r *resolver) searchDescription() string {
 		return "no search paths configured"
 	}
 	return strings.Join(dirs, ", ")
+}
+
+func (r *resolver) applyRecipes(prog *Program) {
+	// Build recipe lookup from all available recipes.
+	recipes := make(map[string]*Recipe)
+	for _, rec := range prog.Recipes {
+		recipes[rec.Name] = rec
+	}
+
+	for _, mol := range prog.Molecules {
+		for _, apply := range mol.Applies {
+			rec, ok := recipes[apply.RecipeName]
+			if !ok {
+				r.result.Errors = append(r.result.Errors, &ResolveError{
+					Import: apply.RecipeName,
+					Pos:    apply.Pos,
+					Reason: fmt.Sprintf("recipe %q not found", apply.RecipeName),
+				})
+				continue
+			}
+
+			// If recipe has 1 param but apply has N args, apply once per arg.
+			argSets := [][]string{apply.Args}
+			if len(rec.Params) == 1 && len(apply.Args) > 1 {
+				argSets = make([][]string, len(apply.Args))
+				for i, arg := range apply.Args {
+					argSets[i] = []string{arg}
+				}
+			}
+
+			for _, args := range argSets {
+				expanded, err := ExpandRecipe(rec, args)
+				if err != nil {
+					r.result.Errors = append(r.result.Errors, &ResolveError{
+						Import: apply.RecipeName,
+						Pos:    apply.Pos,
+						Reason: err.Error(),
+					})
+					continue
+				}
+
+				if err := ApplyRecipe(mol, expanded); err != nil {
+					r.result.Errors = append(r.result.Errors, &ResolveError{
+						Import: apply.RecipeName,
+						Pos:    apply.Pos,
+						Reason: err.Error(),
+					})
+				}
+			}
+		}
+	}
 }
 
 func (r *resolver) mergeInto(mol *Molecule, imported *Program, imp *ImportDecl) {
