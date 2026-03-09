@@ -308,6 +308,105 @@ func TestSelectorContains(t *testing.T) {
 	}
 }
 
+func TestRecipeWireFanOut(t *testing.T) {
+	src := `recipe broadcast(source) {
+  !wire {{source}} -> [deploy, report, notify]
+}
+
+## pipeline
+  # analyze : llm
+    user>
+      Analyze.
+  #/
+  # deploy : script
+` + "```bash\n    echo ok\n```" + `
+  #/
+  # report : text
+    user>
+      Report.
+  #/
+  # notify : text
+    user>
+      Notify.
+  #/
+  apply broadcast(analyze)
+##/`
+
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	result := Resolve(prog, ResolveOptions{BaseDir: t.TempDir()})
+	if len(result.Errors) > 0 {
+		for _, e := range result.Errors {
+			t.Errorf("resolve error: %v", e)
+		}
+		t.FailNow()
+	}
+
+	mol := result.Program.Molecules[0]
+	wireMap := make(map[string][]string)
+	for _, w := range mol.Wires {
+		wireMap[w.From] = append(wireMap[w.From], w.To)
+	}
+
+	targets := wireMap["analyze"]
+	if len(targets) != 3 {
+		t.Fatalf("expected 3 wires from analyze, got %d: %v", len(targets), targets)
+	}
+}
+
+func TestRecipeWireFanIn(t *testing.T) {
+	src := `recipe collect(target) {
+  !wire [step1, step2, step3] -> {{target}}
+}
+
+## pipeline
+  # step1 : llm
+    user>
+      Step 1.
+  #/
+  # step2 : llm
+    user>
+      Step 2.
+  #/
+  # step3 : llm
+    user>
+      Step 3.
+  #/
+  # summary : llm
+    user>
+      Summarize.
+  #/
+  apply collect(summary)
+##/`
+
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	result := Resolve(prog, ResolveOptions{BaseDir: t.TempDir()})
+	if len(result.Errors) > 0 {
+		for _, e := range result.Errors {
+			t.Errorf("resolve error: %v", e)
+		}
+		t.FailNow()
+	}
+
+	mol := result.Program.Molecules[0]
+	count := 0
+	for _, w := range mol.Wires {
+		if w.To == "summary" {
+			count++
+		}
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 wires to summary, got %d", count)
+	}
+}
+
 func TestApplyWithWhereSelector(t *testing.T) {
 	src := `recipe add-gate(target) {
   !add # {{target}}-gate : human

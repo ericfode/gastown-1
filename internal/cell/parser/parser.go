@@ -853,6 +853,20 @@ func (p *Parser) parseWire() *Wire {
 	return firstWire
 }
 
+// parseTemplateIdentList parses [name, name, ...] where names may contain {{param}}.
+func (p *Parser) parseTemplateIdentList() []string {
+	p.expect(TokenLBracket)
+	var list []string
+	for !p.atEnd() && !p.check(TokenRBracket) {
+		list = append(list, p.parseTemplateName())
+		if p.check(TokenComma) {
+			p.advance()
+		}
+	}
+	p.expect(TokenRBracket)
+	return list
+}
+
 // parseIdentList parses [ident, ident, ...] and returns the list of identifiers.
 func (p *Parser) parseIdentList() []string {
 	p.expect(TokenLBracket)
@@ -1145,9 +1159,18 @@ func (p *Parser) parseOperation() *Operation {
 
 	case TokenOpWire:
 		op.Kind = "wire"
-		op.From = p.parseTemplateName()
+		// Support fan-in: !wire [A, B] -> C and fan-out: !wire A -> [B, C]
+		if p.check(TokenLBracket) {
+			op.FromList = p.parseTemplateIdentList()
+		} else {
+			op.From = p.parseTemplateName()
+		}
 		p.expect(TokenArrow)
-		op.To = p.parseTemplateName()
+		if p.check(TokenLBracket) {
+			op.ToList = p.parseTemplateIdentList()
+		} else {
+			op.To = p.parseTemplateName()
+		}
 
 	case TokenOpCut:
 		op.Kind = "cut"

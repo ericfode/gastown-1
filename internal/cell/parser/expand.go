@@ -272,13 +272,32 @@ func applyOp(mol *Molecule, op *Operation) error {
 		mol.Cells = filtered
 
 	case "wire":
-		// Idempotent: skip duplicate wires.
-		for _, w := range mol.Wires {
-			if w.From == op.From && w.To == op.To {
-				return nil
+		// Expand fan-in/fan-out into individual wires.
+		var wirePairs [][2]string
+		if len(op.FromList) > 0 && op.To != "" {
+			for _, f := range op.FromList {
+				wirePairs = append(wirePairs, [2]string{f, op.To})
+			}
+		} else if op.From != "" && len(op.ToList) > 0 {
+			for _, t := range op.ToList {
+				wirePairs = append(wirePairs, [2]string{op.From, t})
+			}
+		} else {
+			wirePairs = [][2]string{{op.From, op.To}}
+		}
+		for _, pair := range wirePairs {
+			// Idempotent: skip duplicate wires.
+			dup := false
+			for _, w := range mol.Wires {
+				if w.From == pair[0] && w.To == pair[1] {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				mol.Wires = append(mol.Wires, &Wire{From: pair[0], To: pair[1], Pos: op.Pos})
 			}
 		}
-		mol.Wires = append(mol.Wires, &Wire{From: op.From, To: op.To, FromList: op.FromList, ToList: op.ToList, Pos: op.Pos})
 
 	case "cut":
 		found := false
