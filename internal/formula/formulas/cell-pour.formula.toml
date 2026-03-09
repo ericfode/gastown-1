@@ -1,0 +1,158 @@
+description = """
+Cell Pour — execute .cell files using the native cell CLI.
+
+This is the production formula for running Cell programs. It uses the compiled
+cell binary (cmd/cell/) for parsing, validation, DAG analysis, and execution.
+
+Unlike cell-forge (which bootstraps the parser), this formula just runs programs.
+It handles: parameter passing, preset selection, import resolution, live vs mock
+execution, and result reporting via beads.
+
+Prerequisites:
+- cell binary built (go build ./cmd/cell/)
+- Target .cell file
+- For --live: ANTHROPIC_API_KEY set
+"""
+formula = "cell-pour"
+version = 2
+
+[parameters]
+cell_file = { type = "str", required = true, description = "Path to the .cell file to execute" }
+preset = { type = "str", required = false, description = "Preset name to apply (if .cell has preset blocks)" }
+live = { type = "boolean", required = false, default = "false", description = "Use Claude API for LLM cells (default: mock)" }
+params = { type = "str", required = false, description = "Comma-separated key=value pairs for param.* inputs" }
+
+[[steps]]
+id = "validate"
+title = "Parse and validate the Cell program"
+description = """
+**1. Ensure the cell binary is built**
+
+```bash
+go build -o /tmp/cell-bin ./cmd/cell/ 2>&1
+```
+
+**2. Validate the .cell file**
+
+```bash
+/tmp/cell-bin validate {{param.cell_file}}
+```
+
+If validation fails, report errors and STOP.
+If validation succeeds, proceed. The output shows the program structure.
+
+**3. Inspect the DAG**
+
+```bash
+/tmp/cell-bin dag {{param.cell_file}} --json
+```
+
+Record: molecule name, cell count, dependency edges.
+This is the execution plan.
+"""
+
+[[steps]]
+id = "check-inputs"
+title = "Verify required inputs are provided"
+needs = "validate"
+description = """
+**1. Parse the Cell file's input declarations**
+
+Look for `input param.X : type required` lines in the validation output
+or by reading the file directly.
+
+**2. Match against provided params**
+
+Split {{param.params}} on commas, then on '=' to get key-value pairs.
+For each required input, verify a value was provided.
+
+If a required input is missing and has no default, STOP and report:
+"Missing required input: param.X (type: T)"
+
+**3. If a preset was specified**
+
+Verify the preset name exists in the .cell file.
+Merge preset values with provided params (explicit params override preset).
+"""
+
+[[steps]]
+id = "pour"
+title = "Execute the Cell program"
+needs = "check-inputs"
+description = """
+**1. Create tracking bead**
+
+```bash
+bd create "cell-pour: {{param.cell_file}}" -t task -p 2 --json
+```
+Record POUR_ID from output.
+
+**2. Run cell pour**
+
+If {{param.live}} is true:
+```bash
+/tmp/cell-bin pour {{param.cell_file}} --live 2>&1
+```
+
+If {{param.live}} is false (default):
+```bash
+/tmp/cell-bin pour {{param.cell_file}} 2>&1
+```
+
+**3. Capture output**
+
+The cell binary prints:
+- Sheet/molecule name and cell count
+- Execution order (topological sort)
+- Per-cell results (truncated to 100 chars)
+- Execution time
+
+Record the full output for reporting.
+
+**4. Handle errors**
+
+If pour fails with "execution error":
+- Check which cell failed
+- Report the error with context
+- Update the bead with failure info
+
+```bash
+bd update POUR_ID --description="Pour failed at cell: <name>. Error: <msg>" --json
+```
+"""
+
+[[steps]]
+id = "report"
+title = "Report results and close tracking"
+needs = "pour"
+description = """
+**1. Summarize results**
+
+From the pour output, extract:
+- Total cells executed
+- Execution time
+- Per-cell output summaries
+- Any oracle verdicts
+
+**2. Generate DAG visualization**
+
+```bash
+/tmp/cell-bin dag {{param.cell_file}} > /tmp/cell-dag.dot
+```
+
+If graphviz is available:
+```bash
+dot -Tsvg /tmp/cell-dag.dot -o /tmp/cell-dag.svg 2>/dev/null
+```
+
+**3. Close tracking bead**
+
+```bash
+bd close POUR_ID --reason="Pour complete. Cells: N, Time: Xs. Terminal output: <summary>" --json
+```
+
+**4. Return terminal cell outputs**
+
+Report the outputs of cells with no downstream dependencies.
+These are the molecule's final results.
+"""
