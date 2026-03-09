@@ -16,6 +16,7 @@ type Lexer struct {
 	inCodeFence bool // inside ``` ... ```
 	codeFenceType string // e.g., "oracle", "sh"
 	inPrompt bool // inside a prompt section (after system>, user>, etc.)
+	promptBeforeFence bool // was in prompt mode before entering code fence
 }
 
 // keywords maps keyword strings to token types.
@@ -373,6 +374,11 @@ func (l *Lexer) lexCodeFenceStart() {
 		l.col = 1
 	}
 
+	// Preserve promptBeforeFence if already set (e.g., prompt mode set it before returning)
+	if !l.promptBeforeFence {
+		l.promptBeforeFence = l.inPrompt
+	}
+	l.inPrompt = false
 	l.inCodeFence = true
 }
 
@@ -406,6 +412,8 @@ func (l *Lexer) lexCodeFenceContent() error {
 			}
 			l.inCodeFence = false
 			l.codeFenceType = ""
+			l.inPrompt = l.promptBeforeFence
+			l.promptBeforeFence = false
 			return nil
 		}
 
@@ -473,9 +481,20 @@ func (l *Lexer) lexPromptContent() error {
 		if ch == '#' && l.peek(1) == ' ' {
 			isStructural = true
 		}
-		// ``` (code fence)
+		// ``` (code fence) — emit accumulated prompt text, handle fence, continue prompt
 		if ch == '`' && l.peek(1) == '`' && l.peek(2) == '`' {
-			isStructural = true
+			// Restore position, emit what we have, handle code fence, then continue
+			l.pos = lineStart
+			l.line = savedLine
+			l.col = savedCol
+			if len(lines) > 0 {
+				l.emit(TokenPromptText, strings.Join(lines, "\n"))
+				lines = nil
+			}
+			// Let the main loop handle the code fence; save prompt state
+			l.promptBeforeFence = true
+			l.inPrompt = false
+			return nil
 		}
 		// Section tag: word followed by >
 		if isIdentStart(ch) {
@@ -494,16 +513,42 @@ func (l *Lexer) lexPromptContent() error {
 		if ch == '-' && l.peek(1) == ' ' && indent <= 4 {
 			isStructural = true
 		}
-		// map # or reduce # or meta #
-		if isIdentStart(ch) {
+		// Keyword-based structural detection — require disambiguating context
+		if !isStructural && isIdentStart(ch) {
 			peekPos := l.pos
 			for peekPos < len(l.input) && isIdentChar(l.input[peekPos]) {
 				peekPos++
 			}
 			if peekPos < len(l.input) {
 				word := string(l.input[l.pos:peekPos])
-				if word == "map" || word == "reduce" || word == "meta" || word == "input" {
-					isStructural = true
+				rest := l.pos // position after the word
+				_ = rest
+				// Skip whitespace after word for lookahead
+				afterWord := peekPos
+				for afterWord < len(l.input) && (l.input[afterWord] == ' ' || l.input[afterWord] == '\t') {
+					afterWord++
+				}
+				switch word {
+				case "input":
+					// "input param." is structural; "input validation" is not
+					if afterWord+6 < len(l.input) && string(l.input[afterWord:afterWord+6]) == "param." {
+						isStructural = true
+					}
+				case "map", "reduce":
+					// "map #" is structural; "map of the city" is not
+					if afterWord < len(l.input) && l.input[afterWord] == '#' {
+						isStructural = true
+					}
+				case "meta":
+					// "meta #" or "meta #/" is structural
+					if afterWord < len(l.input) && l.input[afterWord] == '#' {
+						isStructural = true
+					}
+				case "prompt":
+					// "prompt@" is structural
+					if afterWord < len(l.input) && l.input[afterWord] == '@' {
+						isStructural = true
+					}
 				}
 			}
 		}

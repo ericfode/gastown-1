@@ -306,6 +306,16 @@ func (p *Parser) parseCellBody(cell *Cell) {
 				cell.VarsBlock = vars
 			}
 
+		case p.check(TokenPromptText):
+			// Prompt text that appeared after a code fence inside a prompt section.
+			// Append to the last prompt section's lines.
+			text := p.current().Value
+			p.advance()
+			if len(cell.Prompts) > 0 {
+				last := cell.Prompts[len(cell.Prompts)-1]
+				last.Lines = append(last.Lines, text)
+			}
+
 		default:
 			// Unknown — skip
 			p.addError("unexpected token in cell body: %s", p.current().Value)
