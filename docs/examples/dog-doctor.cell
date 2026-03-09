@@ -16,7 +16,7 @@
     ```bash
     echo "--- Connectivity check ---"
     dolt sql -q "SELECT active_branch()" --port {{param.port}} \
-      || { gt escalate -s CRITICAL "Dolt: server unreachable on port {{param.port}}"; exit 1; }
+      || { echo "ERROR: Dolt server unreachable on port {{param.port}}"; exit 1; }
 
     echo "--- Latency check ---"
     START=$(date +%s%N)
@@ -74,9 +74,8 @@
 
     echo "$REPORT"
 
-    gt mail send deacon/ -s "DOG_DONE: doctor" -m "Task: dolt-doctor
-    Status: COMPLETE
-    $(echo "$REPORT" | head -20)"
+    echo "WOULD SEND: DOG_DONE: doctor — $REPORT" | head -20
+    # NOTE: gt mail disabled in Cell examples to prevent side-effects during testing
     ```
   #/
 

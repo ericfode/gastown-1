@@ -61,12 +61,12 @@ Time the probe query. Warn if > {{latency_threshold}}.
 - Warning: if latency exceeds threshold
 
 **If server unreachable:**
-This is a critical failure. Escalate immediately:
+This is a critical failure. Report the error (do NOT use gt escalate from formulas):
 ```bash
-gt escalate -s CRITICAL "Dolt: server unreachable on port {{port}}"
+echo "ERROR: Dolt server unreachable on port {{port}}"
 ```
 
-**Exit criteria:** Server connectivity confirmed (or escalated)."""
+**Exit criteria:** Server connectivity confirmed (or error reported)."""
 
 [[steps]]
 id = "inspect"

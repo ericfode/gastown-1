@@ -1058,7 +1058,7 @@ Linear 3-step probe-inspect-report pipeline. All steps are deterministic checks.
     end=$(date +%s%N)
     latency=$(( (end - start) / 1000000 ))
     if [ $rc -ne 0 ]; then
-      gt escalate -s CRITICAL "Dolt: server unreachable on port {{param.port}}"
+      echo "ERROR: Dolt server unreachable on port {{param.port}}"
       exit 1
     fi
     echo "latency_ms=$latency"
