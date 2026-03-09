@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -187,5 +188,124 @@ func runBatch(t *testing.T, label string, files []string) {
 				t.Errorf("FAIL: %s: %s", r.Filename, strings.Join(r.Errors, "; "))
 			}
 		}
+	}
+}
+
+// TestTokenDistribution analyzes token type distribution across all files.
+// Identifies distillation candidates: token patterns that repeat identically.
+func TestTokenDistribution(t *testing.T) {
+	examplesDir := "../../../docs/examples"
+	all := append(append(batch1Files, batch2Files...), batch3Files...)
+
+	globalDist := make(map[TokenType]int)
+
+	for _, f := range all {
+		path := filepath.Join(examplesDir, f)
+		src, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		tokens, err := Lex(string(src))
+		if err != nil {
+			continue
+		}
+		for _, tok := range tokens {
+			globalDist[tok.Type]++
+		}
+	}
+
+	// Sort by frequency.
+	type entry struct {
+		Type  TokenType
+		Count int
+	}
+	var entries []entry
+	for tt, count := range globalDist {
+		entries = append(entries, entry{tt, count})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Count > entries[j].Count
+	})
+
+	t.Logf("\n=== Token Type Distribution (all %d files) ===", len(all))
+	for _, e := range entries {
+		t.Logf("  %-20s %5d", e.Type, e.Count)
+	}
+
+	// Structural pattern analysis: count cell header patterns (# name : type).
+	cellTypeFreq := make(map[string]int)
+	for _, f := range all {
+		path := filepath.Join(examplesDir, f)
+		src, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		prog, err := Parse(string(src))
+		if err != nil {
+			continue
+		}
+		for _, mol := range prog.Molecules {
+			for _, c := range mol.Cells {
+				cellTypeFreq[c.Type.Name]++
+			}
+		}
+	}
+
+	t.Logf("\n=== Cell Type Frequency ===")
+	var ctEntries []entry
+	for name, count := range cellTypeFreq {
+		ctEntries = append(ctEntries, entry{TokenType(0), count}) // reusing struct
+		_ = name
+	}
+	// Sort cell types by name for determinism
+	typeNames := make([]string, 0, len(cellTypeFreq))
+	for name := range cellTypeFreq {
+		typeNames = append(typeNames, name)
+	}
+	sort.Strings(typeNames)
+	for _, name := range typeNames {
+		t.Logf("  %-20s %5d", name, cellTypeFreq[name])
+	}
+
+	// Distillation candidates: section tags that appear in >50% of molecules.
+	sectionTagFreq := make(map[string]int)
+	molCount := 0
+	for _, f := range all {
+		path := filepath.Join(examplesDir, f)
+		src, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		prog, err := Parse(string(src))
+		if err != nil {
+			continue
+		}
+		for _, mol := range prog.Molecules {
+			molCount++
+			tags := make(map[string]bool)
+			for _, c := range mol.Cells {
+				for _, ps := range c.Prompts {
+					tags[ps.Tag] = true
+				}
+			}
+			for tag := range tags {
+				sectionTagFreq[tag]++
+			}
+		}
+	}
+
+	t.Logf("\n=== Section Tag Frequency (across %d molecules) ===", molCount)
+	tagNames := make([]string, 0, len(sectionTagFreq))
+	for name := range sectionTagFreq {
+		tagNames = append(tagNames, name)
+	}
+	sort.Strings(tagNames)
+	for _, name := range tagNames {
+		pct := float64(sectionTagFreq[name]) / float64(molCount) * 100
+		marker := ""
+		if pct > 50 {
+			marker = " ← distillation candidate"
+		}
+		t.Logf("  %-20s %3d/%d (%.0f%%)%s", name, sectionTagFreq[name], molCount, pct, marker)
 	}
 }
