@@ -15,8 +15,18 @@ and runtime.
 
 ## Inventory
 
-44 TOML formulas total. Survey found: 18 DIRECT (41%), 22 EXTENDED (50%),
-4 GAP (9%). With import/apply/selectors, 100% coverage.
+44 TOML formulas total. Classified by Cell complexity:
+
+| Tier | Count | Description |
+|------|-------|-------------|
+| T1 Simple | 7 | Linear molecules, Dog infra tasks |
+| T2 Convoy | 7 | Parallel-leg reviews + Hanoi proofs |
+| T3 Molecule (simple) | 16 | Release pipelines, basic orchestration |
+| T4 Molecule (complex) | 10 | Patrol loops, state machines, sub-mol |
+| T5 Expansion/Meta | 4 | AOP aspects, composition |
+
+Migration order: T1 → T5 → T2 → T3 → T4
+(T5 early because it defines composition primitives others need)
 
 ---
 
