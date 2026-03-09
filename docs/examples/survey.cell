@@ -1,0 +1,48 @@
+-- Survey — demonstrates map/reduce combinators.
+-- Maps over a list of topics, then reduces findings into a summary.
+
+## survey
+
+  input param.topics : [str] required
+  input param.question : str required
+
+  -- Analyze each topic in parallel (map)
+  map # analyze : llm over {{param.topics}} as topic
+    @cost(max: 4000)
+    system>
+      You are a research analyst. Be concise and evidence-based.
+    user>
+      Analyze "{{topic}}" with respect to: {{param.question}}
+      Provide 3-5 key findings.
+    format> analysis
+      { topic: str, findings: [str], confidence: number }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["topic", "findings", "confidence"]);
+    assert len(output.findings) >= 1;
+    assert output.confidence >= 0;
+    assert output.confidence <= 1;
+    ```
+  #/
+
+  -- Combine all analyses into one summary (reduce)
+  reduce # synthesize : llm over {{analyze.*}} as item with acc = "No findings yet."
+    @cost(max: 6000)
+    system>
+      You synthesize research findings. Build on prior summary.
+    context>
+      Running summary so far:
+      {{acc}}
+    user>
+      Incorporate these new findings:
+      Topic: {{item.topic}}
+      Findings: {{item.findings}}
+      Confidence: {{item.confidence}}
+
+      Update the running summary. Highlight agreements and conflicts.
+    format> summary
+      { summary: str, themes: [str], conflicts: [str] }
+  #/
+
+##/

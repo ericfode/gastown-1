@@ -1,0 +1,34 @@
+-- Hello World — minimal Cell example.
+-- Two cells: greet produces a greeting, format wraps it.
+
+## hello
+
+  input param.name : str required
+
+  # greet : llm
+    system>
+      You are friendly and concise.
+    user>
+      Say hello to {{param.name}} in one sentence.
+    format> greeting
+      { message: str }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["message"]);
+    assert len(output.message) > 0;
+    ```
+  #/
+
+  # wrap : llm
+    - greet
+    system>
+      You format messages for display.
+    user>
+      Take this greeting and add an appropriate emoji:
+      {{greet.message}}
+    format> display
+      { text: str, emoji: str }
+  #/
+
+##/
