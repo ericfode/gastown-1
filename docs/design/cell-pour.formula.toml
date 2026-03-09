@@ -1,0 +1,264 @@
+description = """
+Cell Pour — execute a .cell file using Gas Town APIs.
+
+This formula teaches a crew member to interpret and execute Cell language files
+by mapping Cell constructs to bd (beads) commands. It is the bootstrap
+interpreter: no compiled parser needed, just an agent that can read Cell syntax.
+
+The agent reads the .cell file, builds a dependency graph, creates beads for
+each cell, wires dependencies, evaluates ready cells (LLM or script), runs
+oracles, and propagates results until all cells complete.
+
+Prerequisites:
+- A .cell file to execute
+- bd (beads) CLI available
+- LLM access for llm-type cells
+- Shell access for script-type cells
+"""
+formula = "cell-pour"
+version = 1
+
+[[steps]]
+id = "parse"
+title = "Parse the Cell file"
+description = """
+Read the .cell file and extract the structure.
+
+**1. Read the file**
+```bash
+cat {{param.cell_file}}
+```
+
+**2. Identify top-level constructs**
+
+Scan for these patterns:
+- `## name` ... `##/` → Molecule (becomes an epic)
+- `# name : type` ... `#/` → Cell (becomes a bead)
+- `name -> name` → Wire (becomes a dependency)
+- `map # name : type over ref as var` → Map cell (becomes N beads)
+- `reduce # name : type over ref as item with acc = init` → Reduce cell
+- `preset name { ... }` → Parameter preset
+- `input param.name : type` → Required input parameter
+- `recipe name(...) { ... }` → Named graph operation (defer to later)
+- `import name` → Import another molecule
+- `apply name(...) where ...` → Apply recipe with selector
+
+**3. Build the dependency graph**
+
+For each cell, collect its dependencies:
+- Explicit refs: `- upstream-cell` lines inside the cell body
+- Prompt refs: `{{cell-name}}` or `{{cell-name.field}}` in prompt text
+- OR-joins: `- upstream (or)` means fire when ANY dep completes
+- Conditional wires: `a -> ?oracle -> b` means wire only if oracle passes
+
+Record:
+- cells: list of {name, type, deps[], prompt_sections[], oracle?, format?}
+- wires: list of {from, to, condition?}
+- inputs: list of {name, type, required?, default?}
+- presets: map of {name → {field: value}}
+"""
+
+[[steps]]
+id = "validate-inputs"
+title = "Validate inputs and resolve presets"
+description = """
+**1. Check required inputs**
+
+For each `input param.X : type required`:
+- Verify {{param.X}} was provided
+- If missing and no default, STOP and report missing input
+
+**2. Apply preset if specified**
+
+If a preset was selected (via `--preset name`), merge its values into params.
+Preset values override defaults but not explicit params.
+
+**3. Type-check inputs**
+
+For each input, verify the provided value matches the declared type:
+- `str` → string
+- `number` → numeric
+- `boolean` → true/false
+- `json` → valid JSON
+- `[type]` → array of type
+"""
+
+[[steps]]
+id = "create-beads"
+title = "Create beads for all cells"
+description = """
+**1. Create the epic (molecule)**
+
+```bash
+bd create "{{molecule_name}}" -t epic --description="Cell pour: {{param.cell_file}}" --json
+```
+Record the epic ID as EPIC_ID.
+
+**2. Create a bead for each cell**
+
+For each cell `# name : type`:
+```bash
+bd create "name" -t task -p 2 --deps parent:EPIC_ID --json
+```
+Record the mapping: cell_name → bead_id
+
+**3. Wire dependencies**
+
+For each dependency (ref or wire):
+```bash
+bd update BEAD_ID --deps DEP_BEAD_ID --json
+```
+
+For map cells, do NOT create beads yet — they expand at evaluation time.
+
+**4. Record the graph**
+
+Write a summary of cell_name → bead_id → [dep_bead_ids] for tracking.
+"""
+
+[[steps]]
+id = "evaluate"
+title = "Evaluate ready cells"
+description = """
+This is the main execution loop. Repeat until all cells are complete or error.
+
+**1. Find ready cells**
+```bash
+bd ready --json
+```
+Filter to beads belonging to this molecule's epic.
+
+**2. For each ready cell, evaluate by type:**
+
+### LLM cells (`# name : llm`)
+
+a. **Assemble prompt** — Build the LLM prompt from sections:
+   - `system>` lines → system message
+   - `context>` lines → prepend to user message (with ref interpolation)
+   - `user>` lines → user message
+   - `think>` lines → assistant prefill
+   - `examples>` pairs → few-shot messages
+   - `format>` block → append format instructions to user message
+   - `each> var in {{ref}}` → repeat section per item
+   - `accept>` lines → acceptance criteria (for self-check)
+
+b. **Interpolate refs** — Replace `{{cell-name}}` with the output of that cell's
+   completed bead. Replace `{{cell-name.field}}` with a JSON field extraction.
+   Replace `{{param.X}}` with the input parameter value.
+   Replace `{{@fragment}}` with the prompt fragment text.
+
+c. **Check typed holes** — For each `{{ref : oracle}}`:
+   - `json { ... }` → validate ref output is JSON with those keys
+   - `len(min, max)` → validate string length
+   - `enum("a","b")` → validate value is in set
+   - `?oracle-name` → run the named oracle
+   If any typed hole fails, mark the upstream bead as REJECT and skip this cell.
+
+d. **Call LLM** — Send the assembled prompt. Use the model and parameters from
+   `@model(name: "...")` and `@temperature(value: ...)` annotations if present.
+
+e. **Capture output** — Store the LLM response.
+
+### Script cells (`# name : script`)
+
+a. **Interpolate refs** in the script body
+b. **Execute** the script block (```bash ... ```)
+c. **Capture stdout** as the cell output
+
+### Decision cells (`# name : decision`)
+
+a. Assemble prompt as for LLM
+b. The output must be a structured decision (format> enforces this)
+c. Route downstream based on the decision value
+
+### Sub-molecule cells (`# name : mol(other)`)
+
+a. Find the referenced molecule definition
+b. Map `vars>` block values to the sub-molecule's inputs
+c. Recursively pour the sub-molecule (create nested epic)
+d. The sub-molecule's final output becomes this cell's output
+
+**3. Run oracle (if present)**
+
+If the cell has an oracle block (```oracle ... ```):
+- Execute each oracle statement against the cell output
+- `json_parse(output)` → verify output is valid JSON
+- `keys_present(output, ["key1", "key2"])` → verify keys exist
+- `assert expr` → evaluate boolean expression
+- `reject if expr` → reject output if true
+- `accept if expr` → accept output if true
+- `score(expr) if expr` → accumulate quality score
+- `for var in expr { ... }` → iterate oracle checks
+- `if expr { ... }` → conditional oracle check
+
+If oracle FAILS:
+```bash
+# Log rejection, retry up to @retry limit
+bd update BEAD_ID --description="Oracle rejected: <reason>" --json
+```
+Re-evaluate the cell (re-send prompt with rejection feedback).
+
+If oracle PASSES:
+```bash
+bd close BEAD_ID --reason="<cell output>" --json
+```
+
+**4. Handle map cells**
+
+When a map cell becomes ready (its `over` ref is complete):
+a. Parse the ref output as a collection
+b. For each item, create a new bead:
+   ```bash
+   bd create "cell-name-item-N" -t task --deps parent:EPIC_ID --json
+   ```
+c. Evaluate each bead with the item bound to the `as` variable
+
+**5. Handle reduce cells**
+
+a. Initialize accumulator with the `with acc = init` value
+b. For each item in the collection:
+   - Bind `item` and `acc` in the prompt
+   - Evaluate, capture output as new `acc`
+c. Final `acc` value is the reduce cell's output
+
+**6. Repeat**
+
+Go back to step 1. Continue until:
+- All cells complete → molecule SUCCESS
+- A cell exhausts retries → molecule FAIL
+- Deadlock (no ready cells but incomplete cells remain) → molecule DEADLOCK
+"""
+
+[[steps]]
+id = "report"
+title = "Report results"
+description = """
+**1. Summarize execution**
+
+For each cell, report:
+- Name, type, status (complete/failed/skipped)
+- Output summary (first 200 chars)
+- Oracle verdict (pass/fail/retries)
+- Token cost (if LLM cell)
+
+**2. Close the epic**
+
+If all cells complete:
+```bash
+bd close EPIC_ID --reason="Cell pour complete. Outputs: <summary>" --json
+```
+
+If any cell failed:
+```bash
+bd update EPIC_ID --description="Cell pour failed at: <cell-name>. Reason: <reason>" --json
+```
+
+**3. Return outputs**
+
+The molecule's output is the output of its terminal cells (cells with no
+downstream wires). Report these as the final result.
+"""
+
+[parameters]
+cell_file = { type = "str", required = true, description = "Path to the .cell file to execute" }
+preset = { type = "str", required = false, description = "Name of preset to apply" }
