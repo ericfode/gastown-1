@@ -1196,11 +1196,7 @@ When a cell is distilled, its execution history is captured:
 
 ```cell
 # classify : distilled
-  -- Provenance: distilled from llm after 12 consistent runs
-  -- Distilled: 2026-03-09T04:00:00Z
-  -- Input hash: blake3(prompt + refs)
-  -- Output hash: blake3(output)
-  -- Oracle: all 12 runs passed json_parse + keys_present
+  - param.category
 
   distill>
     input_pattern: "{{param.category}}"
@@ -1210,13 +1206,23 @@ When a cell is distilled, its execution history is captured:
       "chore" -> { priority: 3, type: "chore" }
     }
     fallback: llm
-  #/
+
+  ```oracle
+  json_parse(output);
+  keys_present(output, ["priority", "type"]);
+  ```
+#/
 ```
+
+Note: `distill>` is a section tag like `system>` or `user>` — it has no explicit
+closer. The block ends implicitly when the next structural element starts (here,
+the oracle block). The `#/` closes the **cell**, not the distill block.
 
 ### Distillation Block Grammar
 
 ```ebnf
 distill_block = "distill>" { distill_field } ;
+                (* No explicit closer — ends at next structural element *)
 distill_field = "input_pattern" ":" value
               | "output_map" ":" "{" { value "->" value } "}"
               | "fallback" ":" cell_type ;
