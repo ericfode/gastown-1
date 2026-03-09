@@ -48,8 +48,28 @@ func main() {
 	case "validate":
 		cmdValidate(string(src), file)
 	case "pour":
-		live := len(os.Args) > 3 && os.Args[3] == "--live"
-		cmdPour(string(src), file, live)
+		live := false
+		params := make(map[string]string)
+		for i := 3; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			if arg == "--live" {
+				live = true
+			} else if strings.HasPrefix(arg, "--param=") || strings.HasPrefix(arg, "-p=") {
+				// --param=key=value or -p=key=value
+				kv := strings.SplitN(strings.SplitN(arg, "=", 2)[1], "=", 2)
+				if len(kv) == 2 {
+					params[kv[0]] = kv[1]
+				}
+			} else if (arg == "--param" || arg == "-p") && i+1 < len(os.Args) {
+				// --param key=value
+				i++
+				kv := strings.SplitN(os.Args[i], "=", 2)
+				if len(kv) == 2 {
+					params[kv[0]] = kv[1]
+				}
+			}
+		}
+		cmdPour(string(src), file, live, params)
 	case "dag":
 		asJSON := len(os.Args) > 3 && os.Args[3] == "--json"
 		cmdDag(string(src), file, asJSON)
@@ -63,7 +83,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "Usage: cell <command> <file.cell> [flags]")
 	fmt.Fprintln(os.Stderr, "Commands: lex, parse, validate, pour, dag")
-	fmt.Fprintln(os.Stderr, "Flags: --live (pour), --json (dag)")
+	fmt.Fprintln(os.Stderr, "Flags: --live (pour), --json (dag), --param key=value (pour)")
 }
 
 func cmdLex(src string) {
@@ -139,7 +159,7 @@ func resolveImports(prog *parser.Program, filename string) *parser.Program {
 	return result.Program
 }
 
-func cmdPour(src, filename string, live bool) {
+func cmdPour(src, filename string, live bool, params map[string]string) {
 	prog, err := parser.Parse(src)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
@@ -166,7 +186,7 @@ func cmdPour(src, filename string, live bool) {
 
 	// Fallback to Sub-Zero runner.
 	fmt.Printf("(engine: %v — falling back to subzero)\n", sheetErr)
-	pourViaSubZero(mol, live)
+	pourViaSubZero(mol, live, params)
 }
 
 func pourViaEngine(sheet *engine.Sheet, live bool) {
@@ -221,7 +241,7 @@ func pourViaEngine(sheet *engine.Sheet, live bool) {
 	}
 }
 
-func pourViaSubZero(mol *parser.Molecule, live bool) {
+func pourViaSubZero(mol *parser.Molecule, live bool, params map[string]string) {
 	var executor subzero.Executor
 	if live {
 		executor = &subzero.DispatchExecutor{
@@ -234,6 +254,7 @@ func pourViaSubZero(mol *parser.Molecule, live bool) {
 
 	runner := &subzero.Runner{
 		Executor: executor,
+		Params:   params,
 		MaxCells: 100,
 	}
 
