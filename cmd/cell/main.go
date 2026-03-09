@@ -102,16 +102,24 @@ func cmdValidate(src, filename string) {
 	// Resolve imports.
 	prog = resolveImports(prog, filename)
 
-	errors := validate(prog)
-	if len(errors) == 0 {
+	// Use the full semantic validator (cycles, refs, fields, human cells, inputs)
+	valErrs := parser.Validate(prog)
+	if len(valErrs) == 0 {
 		fmt.Println("OK — no validation errors")
 		printProgram(prog)
 	} else {
-		fmt.Fprintf(os.Stderr, "%d validation errors:\n", len(errors))
-		for _, e := range errors {
-			fmt.Fprintf(os.Stderr, "  - %s\n", e)
+		hasError := false
+		for _, e := range valErrs {
+			fmt.Fprintf(os.Stderr, "  %s\n", e)
+			if e.Severity == "error" {
+				hasError = true
+			}
 		}
-		os.Exit(1)
+		if hasError {
+			os.Exit(1)
+		}
+		// Warnings only — still show structure
+		printProgram(prog)
 	}
 }
 
@@ -435,27 +443,3 @@ type molInfo struct {
 	CellNames []string `json:"cell_names,omitempty"`
 }
 
-func validate(prog *parser.Program) []string {
-	var errors []string
-	for _, mol := range prog.Molecules {
-		if mol.Name == "" {
-			errors = append(errors, "molecule with empty name")
-		}
-		cellNames := make(map[string]bool)
-		for _, c := range mol.Cells {
-			if cellNames[c.Name] {
-				errors = append(errors, fmt.Sprintf("duplicate cell %q in %s", c.Name, mol.Name))
-			}
-			cellNames[c.Name] = true
-		}
-		for _, c := range mol.Cells {
-			for _, ref := range c.Refs {
-				refBase := strings.Split(ref.Name, ".")[0]
-				if !cellNames[refBase] && !strings.HasPrefix(refBase, "param") {
-					errors = append(errors, fmt.Sprintf("cell %q refs unknown %q in %s", c.Name, ref.Name, mol.Name))
-				}
-			}
-		}
-	}
-	return errors
-}
