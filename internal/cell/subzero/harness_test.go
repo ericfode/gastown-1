@@ -49,10 +49,7 @@ func TestHarnessAllCellFiles(t *testing.T) {
 		mol := prog.Molecules[0]
 
 		runner := &Runner{
-			Executor: &DispatchExecutor{
-				LLM:    &MockExecutor{},
-				Script: &ScriptExecutor{TimeoutSec: 5},
-			},
+			Executor: &MockExecutor{},
 			Params:   defaultParams(name),
 			MaxCells: 50,
 		}
