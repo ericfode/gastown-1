@@ -225,7 +225,7 @@ func pourViaSubZero(mol *parser.Molecule, live bool) {
 	var executor subzero.Executor
 	if live {
 		executor = &subzero.DispatchExecutor{
-			LLM:    &subzero.MockExecutor{},
+			LLM:    &subzero.LLMExecutor{},
 			Script: &subzero.ScriptExecutor{TimeoutSec: 30},
 		}
 	} else {
