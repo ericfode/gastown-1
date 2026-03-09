@@ -1,0 +1,17 @@
+-- Shiny Enterprise — composition with expansion.
+-- Extends shiny with Rule of Five on the implement step.
+-- Enterprise-grade: design, then 5 implementation passes, then review+test+ship.
+
+## shiny-enterprise
+
+  import shiny
+  import rule-of-five
+
+  -- Expand the implement step into 5 iterative refinements
+  apply rule-of-five(implement)
+
+  -- Result: design → implement-draft → refine-1 → refine-2 →
+  --         refine-3 → refine-4 → implement → review → test → submit
+  -- The original implement cell now depends on refine-4's output.
+
+##/

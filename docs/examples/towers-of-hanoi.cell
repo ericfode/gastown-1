@@ -1,0 +1,81 @@
+-- Towers of Hanoi — durability proof, not computation.
+-- Pre-computed moves. Agent just closes steps. Proves crash-recovery at scale.
+-- 3 disks = 7 moves (2^n - 1).
+
+## towers-of-hanoi
+
+  input param.source_peg : str default("A")
+  input param.target_peg : str default("C")
+  input param.auxiliary_peg : str default("B")
+
+  -- Each step is a trivial acknowledgment cell.
+  -- The agent reads the instruction and closes the bead.
+  -- This is not LLM work — it's deterministic execution.
+
+  # setup : text
+    user>
+      Verify initial state: all 3 disks stacked on peg {{param.source_peg}}.
+      Largest on bottom.
+    accept>
+      Initial state verified.
+  #/
+
+  # move-1 : text
+    - setup
+    user>
+      Move disk 1: {{param.source_peg}} → {{param.target_peg}}
+  #/
+
+  # move-2 : text
+    - move-1
+    user>
+      Move disk 2: {{param.source_peg}} → {{param.auxiliary_peg}}
+  #/
+
+  # move-3 : text
+    - move-2
+    user>
+      Move disk 1: {{param.target_peg}} → {{param.auxiliary_peg}}
+  #/
+
+  # move-4 : text
+    - move-3
+    user>
+      Move disk 3: {{param.source_peg}} → {{param.target_peg}}
+  #/
+
+  # move-5 : text
+    - move-4
+    user>
+      Move disk 1: {{param.auxiliary_peg}} → {{param.source_peg}}
+  #/
+
+  # move-6 : text
+    - move-5
+    user>
+      Move disk 2: {{param.auxiliary_peg}} → {{param.target_peg}}
+  #/
+
+  # move-7 : text
+    - move-6
+    user>
+      Move disk 1: {{param.source_peg}} → {{param.target_peg}}
+  #/
+
+  # verify : llm
+    - move-7
+    @cost(max: 2000)
+    user>
+      Verify final state: all 3 disks on peg {{param.target_peg}}.
+      Tower intact. All moves were legal.
+    format> verification
+      { valid: "true" | "false", disk_count: number, final_peg: str }
+
+    ```oracle
+    json_parse(output);
+    assert output.valid == "true";
+    assert output.disk_count == 3;
+    ```
+  #/
+
+##/

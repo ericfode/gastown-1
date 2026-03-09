@@ -1,0 +1,17 @@
+-- Shiny Secure — composition example.
+-- Extends shiny with security-audit aspect.
+-- This is Cell's answer to TOML's extends + compose.
+
+## shiny-secure
+
+  import shiny
+  import security-audit
+
+  -- Apply security scans around implement and submit steps
+  apply security-audit(implement, submit)
+
+  -- All cells from shiny are inherited.
+  -- security-audit recipe adds prescan/postscan around implement and submit.
+  -- No other changes needed. The molecule is shiny + security gates.
+
+##/

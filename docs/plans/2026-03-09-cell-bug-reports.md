@@ -73,6 +73,47 @@ Recommend (a) — explicit and grammar-friendly.
 | 004 | warning | grammar | low (add matches pred) |
 | 005 | error | grammar | medium (array wire syntax) |
 
-**Grammar changes needed**: 2 (BUG-003, BUG-005)
-**Grammar additions needed**: 1 (BUG-004)
+## BUG-006: `text` cell type has no execution semantics
+**Severity**: warning (spec gap)
+**Phase**: translate (towers-of-hanoi)
+**Description**: The grammar lists `text` as a valid `cell_type`, but the pour
+formula has no execution path for it. What does it mean to "evaluate" a text
+cell? For Hanoi, these are pre-computed checkpoints — no LLM, no script.
+**Impact**: Any formula with acknowledgment/checkpoint steps
+**Proposed fix**: `text` cells are pass-through. Their output is their prompt
+content rendered with refs interpolated. The runtime marks them complete with
+no computation. Useful for checkpoints, documentation, pre-computed sequences.
+
+## BUG-007: `import` semantics undefined
+**Severity**: error (spec gap)
+**Phase**: translate (shiny-secure, shiny-enterprise)
+**Description**: `import shiny` says "import a molecule" but doesn't define:
+(a) File resolution — where does `shiny` resolve to?
+(b) Namespace — are imported cells merged or nested?
+(c) Collisions — what if importer and importee both define `# review`?
+The TOML system uses `extends = ["shiny"]` which merges parent steps.
+**Impact**: All composition formulas (shiny-secure, shiny-enterprise)
+**Proposed fix**: Define import semantics:
+- Resolution: `shiny` → look for `shiny.cell` in formula search path
+- Namespace: imported cells are merged into the importing molecule's namespace
+- Collisions: importing molecule's definitions override imported ones
+- Multiple imports: merge in order, later imports override earlier
+
+---
+
+## Summary (updated)
+
+| Bug | Severity | Category | Fix Complexity |
+|-----|----------|----------|----------------|
+| 001 | warning | runtime | low (bypass rtk) |
+| 002 | warning | runtime | low (better parsing) |
+| 003 | error | grammar | medium (pre-parse expansion) |
+| 004 | warning | grammar | low (add matches pred) |
+| 005 | error | grammar | medium (array wire syntax) |
+| 006 | warning | spec | low (define text semantics) |
+| 007 | error | spec | medium (import resolution) |
+
+**Grammar changes needed**: 2 (BUG-003, BUG-005) — APPLIED
+**Grammar additions needed**: 1 (BUG-004) — APPLIED
+**Spec gaps found**: 2 (BUG-006, BUG-007)
 **Runtime lessons**: 2 (BUG-001, BUG-002)
