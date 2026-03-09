@@ -477,3 +477,126 @@ func TestParsePromptFragment(t *testing.T) {
 		t.Errorf("expected fragment name 'analyst-persona', got %q", prog.Fragments[0].Name)
 	}
 }
+
+func TestWireFanOut(t *testing.T) {
+	src := `## pipeline
+  # source : llm
+    user>
+      Generate data.
+  #/
+  # sink1 : llm
+    user>
+      Process A.
+  #/
+  # sink2 : llm
+    user>
+      Process B.
+  #/
+  # sink3 : llm
+    user>
+      Process C.
+  #/
+  source -> [sink1, sink2, sink3]
+##/`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	mol := prog.Molecules[0]
+	if len(mol.Wires) != 1 {
+		t.Fatalf("expected 1 wire, got %d", len(mol.Wires))
+	}
+
+	w := mol.Wires[0]
+	if w.From != "source" {
+		t.Errorf("expected From=source, got %q", w.From)
+	}
+	if len(w.ToList) != 3 {
+		t.Fatalf("expected 3 fan-out targets, got %d", len(w.ToList))
+	}
+	expected := []string{"sink1", "sink2", "sink3"}
+	for i, e := range expected {
+		if w.ToList[i] != e {
+			t.Errorf("ToList[%d]: expected %q, got %q", i, e, w.ToList[i])
+		}
+	}
+}
+
+func TestWireFanIn(t *testing.T) {
+	src := `## pipeline
+  # a : llm
+    user>
+      A.
+  #/
+  # b : llm
+    user>
+      B.
+  #/
+  # merge : llm
+    user>
+      Merge.
+  #/
+  [a, b] -> merge
+##/`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	mol := prog.Molecules[0]
+	if len(mol.Wires) != 1 {
+		t.Fatalf("expected 1 wire, got %d", len(mol.Wires))
+	}
+
+	w := mol.Wires[0]
+	if len(w.FromList) != 2 {
+		t.Fatalf("expected 2 fan-in sources, got %d", len(w.FromList))
+	}
+	if w.FromList[0] != "a" || w.FromList[1] != "b" {
+		t.Errorf("expected FromList=[a, b], got %v", w.FromList)
+	}
+	if w.To != "merge" {
+		t.Errorf("expected To=merge, got %q", w.To)
+	}
+}
+
+func TestWireChainEndingFanOut(t *testing.T) {
+	src := `## pipeline
+  # a : llm
+    user>
+      A.
+  #/
+  # b : llm
+    user>
+      B.
+  #/
+  # c : llm
+    user>
+      C.
+  #/
+  # d : llm
+    user>
+      D.
+  #/
+  a -> b -> [c, d]
+##/`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	mol := prog.Molecules[0]
+	if len(mol.Wires) != 2 {
+		t.Fatalf("expected 2 wires (a->b, b->[c,d]), got %d", len(mol.Wires))
+	}
+
+	// First: a -> b
+	if mol.Wires[0].From != "a" || mol.Wires[0].To != "b" {
+		t.Errorf("wire 0: expected a->b, got %s->%s", mol.Wires[0].From, mol.Wires[0].To)
+	}
+	// Second: b -> [c, d]
+	if mol.Wires[1].From != "b" || len(mol.Wires[1].ToList) != 2 {
+		t.Errorf("wire 1: expected b->[c,d], got %s->%v", mol.Wires[1].From, mol.Wires[1].ToList)
+	}
+}

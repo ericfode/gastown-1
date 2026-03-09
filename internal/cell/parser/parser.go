@@ -186,8 +186,8 @@ func (p *Parser) parseMolecule() *Molecule {
 				}
 			}
 
-		case p.check(TokenIdent):
-			// Could be a wire: A -> B or A -> ? oracle -> B
+		case p.check(TokenIdent), p.check(TokenLBracket):
+			// Could be a wire: A -> B, A -> [B, C], [A, B] -> C
 			wire := p.parseWire()
 			if wire != nil {
 				mol.Wires = append(mol.Wires, wire)
@@ -295,9 +295,14 @@ func (p *Parser) parseCellBody(cell *Cell) {
 			}
 
 		case p.check(TokenCodeFence):
-			oracle := p.parseOracleBlock()
-			if oracle != nil {
-				cell.Oracle = oracle
+			// Peek at tag to distinguish oracle vs script code fences
+			if p.isOracleCodeFence() {
+				oracle := p.parseOracleBlock()
+				if oracle != nil {
+					cell.Oracle = oracle
+				}
+			} else {
+				cell.ScriptBody = p.parseScriptCodeFence()
 			}
 
 		case p.check(TokenVars):
@@ -605,6 +610,32 @@ func (p *Parser) parseFormatType() FormatType {
 	}
 }
 
+// isOracleCodeFence returns true if the current code fence has an "oracle" tag.
+// Must be called when positioned at TokenCodeFence.
+func (p *Parser) isOracleCodeFence() bool {
+	// Look ahead: TokenCodeFence, then optionally TokenCodeFenceTag
+	if p.pos+1 < len(p.tokens) && p.tokens[p.pos+1].Type == TokenCodeFenceTag {
+		return p.tokens[p.pos+1].Value == "oracle"
+	}
+	// No tag — treat as oracle for backward compatibility (bare ``` in oracle position)
+	return true
+}
+
+// parseScriptCodeFence parses a ```bash ... ``` or ```sh ... ``` block and returns the body.
+func (p *Parser) parseScriptCodeFence() string {
+	p.expect(TokenCodeFence) // opening ```
+	if p.check(TokenCodeFenceTag) {
+		p.advance() // consume tag (bash, sh, etc.)
+	}
+	body := ""
+	if p.check(TokenPromptText) {
+		body = p.current().Value
+		p.advance()
+	}
+	p.expect(TokenCodeFence) // closing ```
+	return body
+}
+
 func (p *Parser) parseOracleBlock() *OracleBlock {
 	pos := p.currentPos()
 	p.expect(TokenCodeFence) // ```
@@ -754,9 +785,18 @@ func (p *Parser) parseVarsBlock() *VarsBlock {
 
 // parseWire parses one or more chained wires: A -> B -> C becomes [A->B, B->C].
 // Also handles oracle-gated wires: A -> ? oracle -> B.
+// Supports fan-out: A -> [B, C, D] and fan-in: [A, B] -> C.
 func (p *Parser) parseWire() *Wire {
 	pos := p.currentPos()
-	from := p.expectIdent()
+
+	// Parse LHS: either single ident or [ident, ident, ...]
+	var from string
+	var fromList []string
+	if p.check(TokenLBracket) {
+		fromList = p.parseIdentList()
+	} else {
+		from = p.expectIdent()
+	}
 
 	p.expect(TokenArrow) // ->
 
@@ -766,17 +806,26 @@ func (p *Parser) parseWire() *Wire {
 		oracleGate := p.expectIdent()
 		p.expect(TokenArrow) // second ->
 		to := p.expectIdent()
-		return &Wire{From: from, To: to, OracleGate: oracleGate, Pos: pos}
+		return &Wire{From: from, FromList: fromList, To: to, OracleGate: oracleGate, Pos: pos}
 	}
 
-	to := p.expectIdent()
-	firstWire := &Wire{From: from, To: to, Pos: pos}
+	// Parse RHS: either single ident or [ident, ident, ...]
+	var to string
+	var toList []string
+	if p.check(TokenLBracket) {
+		toList = p.parseIdentList()
+	} else {
+		to = p.expectIdent()
+	}
+
+	firstWire := &Wire{From: from, FromList: fromList, To: to, ToList: toList, Pos: pos}
 
 	// Handle chained wires: A -> B -> C -> D
-	// We store the first wire and parse remaining chains into the molecule directly.
-	// Since we return only one wire here, we need to handle chains differently.
-	// Store extra wires via a different mechanism — actually, let's return the first
-	// and let the caller handle the chaining. We'll set p.pendingWires.
+	// Chaining after fan-out/fan-in is not supported (would be ambiguous).
+	if len(fromList) > 0 || len(toList) > 0 {
+		return firstWire
+	}
+
 	p.pendingWires = nil
 	prev := to
 	for p.check(TokenArrow) {
@@ -789,6 +838,11 @@ func (p *Parser) parseWire() *Wire {
 			next := p.expectIdent()
 			p.pendingWires = append(p.pendingWires, &Wire{From: prev, To: next, OracleGate: oracleGate, Pos: pos})
 			prev = next
+		} else if p.check(TokenLBracket) {
+			// Chain ending with fan-out: A -> B -> [C, D]
+			toList := p.parseIdentList()
+			p.pendingWires = append(p.pendingWires, &Wire{From: prev, ToList: toList, Pos: pos})
+			break // can't chain further after fan-out
 		} else {
 			next := p.expectIdent()
 			p.pendingWires = append(p.pendingWires, &Wire{From: prev, To: next, Pos: pos})
@@ -797,6 +851,20 @@ func (p *Parser) parseWire() *Wire {
 	}
 
 	return firstWire
+}
+
+// parseIdentList parses [ident, ident, ...] and returns the list of identifiers.
+func (p *Parser) parseIdentList() []string {
+	p.expect(TokenLBracket)
+	var list []string
+	for !p.atEnd() && !p.check(TokenRBracket) {
+		list = append(list, p.expectIdent())
+		if p.check(TokenComma) {
+			p.advance()
+		}
+	}
+	p.expect(TokenRBracket)
+	return list
 }
 
 func (p *Parser) parseMapCell() *MapCell {

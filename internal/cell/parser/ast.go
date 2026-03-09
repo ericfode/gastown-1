@@ -37,6 +37,7 @@ type Cell struct {
 	Oracle      *OracleBlock
 	AcceptBlock *AcceptBlock
 	VarsBlock   *VarsBlock
+	ScriptBody  string         // bash/sh code fence body for script cells
 	ParamAssigns []*ParamAssign // param.X = value assignments (for mol() cells)
 	Pos         Position
 }
@@ -169,10 +170,14 @@ type VarsBlock struct {
 }
 
 // Wire is an A -> B or A -> ? oracle -> B construct.
+// Fan-out: A -> [B, C, D] creates wires A->B, A->C, A->D.
+// Fan-in: [A, B] -> C creates wires A->C, B->C.
 type Wire struct {
 	From       string
 	To         string
-	OracleGate string // optional oracle in the middle
+	FromList   []string // fan-in: multiple sources (if set, From is empty)
+	ToList     []string // fan-out: multiple targets (if set, To is empty)
+	OracleGate string   // optional oracle in the middle
 	Pos        Position
 }
 
@@ -220,10 +225,12 @@ type Operation struct {
 	Kind    string // "add", "drop", "wire", "cut", "split", "merge", "refine", "seed"
 	Cell    *Cell  // for !add
 	Target  string // for !drop, !refine, !seed
-	From    string // for !wire, !cut
-	To      string // for !wire, !cut
-	Sources []string // for !merge (sources)
-	Targets []string // for !split (targets)
+	From     string   // for !wire, !cut
+	To       string   // for !wire, !cut
+	FromList []string // for !wire fan-in
+	ToList   []string // for !wire fan-out
+	Sources  []string // for !merge (sources)
+	Targets  []string // for !split (targets)
 	Lines   []string // for !refine (prompt lines)
 	Value   *Value   // for !seed
 	Pos     Position

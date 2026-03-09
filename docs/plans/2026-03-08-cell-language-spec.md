@@ -895,9 +895,29 @@ Three constructs close the gap with TOML's composition features.
 ##/
 ```
 
-`import name` loads another molecule's cells, wires, inputs, and presets
-into the current molecule. The imported names are available for recipes
-and wiring. This is how `extends` works in TOML.
+`import name` loads another `.cell` file and merges its contents into the
+importing molecule. This is how `extends` works in TOML.
+
+**File resolution:** `import foo` looks for `foo.cell` in the same directory
+as the importing file, then in any configured search paths.
+
+**Merge semantics (flat):**
+- Imported molecule cells, map cells, reduce cells are merged into the
+  importing molecule's namespace (no prefixing).
+- Imported wires are carried over.
+- Imported inputs are merged (duplicates by param name are deduplicated).
+- Imported recipes become available at the program level for `apply`.
+- Imported fragments and oracles are merged at the program level.
+
+**Collision handling:** If two imports (or an import and the importing
+molecule) define cells with the same name, resolution fails with an error.
+
+**Transitive imports:** If `A` imports `B` and `B` imports `C`, then `A`
+gets cells from both `B` and `C` (recursive resolution).
+
+**Circular imports:** Detected and reported as errors.
+
+**Depth limit:** Import nesting is limited to 10 levels by default.
 
 ### Apply with Selectors
 

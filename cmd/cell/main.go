@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ func main() {
 	case "parse":
 		cmdParse(string(src))
 	case "validate":
-		cmdValidate(string(src))
+		cmdValidate(string(src), file)
 	case "pour":
 		live := len(os.Args) > 3 && os.Args[3] == "--live"
 		cmdPour(string(src), file, live)
@@ -86,12 +87,15 @@ func cmdParse(src string) {
 	printProgram(prog)
 }
 
-func cmdValidate(src string) {
+func cmdValidate(src, filename string) {
 	prog, err := parser.Parse(src)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Resolve imports.
+	prog = resolveImports(prog, filename)
 
 	errors := validate(prog)
 	if len(errors) == 0 {
@@ -106,12 +110,31 @@ func cmdValidate(src string) {
 	}
 }
 
+func resolveImports(prog *parser.Program, filename string) *parser.Program {
+	baseDir := filepath.Dir(filename)
+	if baseDir == "" {
+		baseDir = "."
+	}
+	result := parser.Resolve(prog, parser.ResolveOptions{BaseDir: baseDir})
+	if len(result.Errors) > 0 {
+		fmt.Fprintf(os.Stderr, "%d import errors:\n", len(result.Errors))
+		for _, e := range result.Errors {
+			fmt.Fprintf(os.Stderr, "  - %s\n", e)
+		}
+		os.Exit(1)
+	}
+	return result.Program
+}
+
 func cmdPour(src, filename string, live bool) {
 	prog, err := parser.Parse(src)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Resolve imports.
+	prog = resolveImports(prog, filename)
 
 	if len(prog.Molecules) == 0 {
 		fmt.Fprintln(os.Stderr, "no molecules found — nothing to pour")
