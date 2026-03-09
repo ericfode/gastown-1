@@ -1,0 +1,77 @@
+-- Dog Backup — Dolt database backup to local + offsite.
+-- Translates mol-dog-backup: sync → offsite → report.
+-- Pure infrastructure: script cells, no LLM needed.
+
+## dog-backup
+
+  input param.databases : str default("")
+
+  # sync : script
+    @retry(max: 2)
+    ```bash
+    DATA_DIR="${GT_ROOT}/.dolt-data"
+    results=""
+    total=0
+    synced=0
+
+    # Auto-discover or use provided list
+    if [ -z "{{param.databases}}" ]; then
+      dbs=$(ls -d "$DATA_DIR"/*/  2>/dev/null | xargs -I{} basename {})
+    else
+      dbs="{{param.databases}}"
+    fi
+
+    for db in $dbs; do
+      total=$((total + 1))
+      if cd "$DATA_DIR/$db" && dolt backup sync "${db}-backup" 2>&1; then
+        synced=$((synced + 1))
+        results="${results}${db}:ok\n"
+      else
+        results="${results}${db}:failed\n"
+      fi
+    done
+
+    echo "synced=$synced"
+    echo "total=$total"
+    echo -e "$results"
+    ```
+
+    ```oracle
+    assert output contains "synced=";
+    assert output contains "total=";
+    ```
+  #/
+
+  # offsite : script
+    - sync
+    ```bash
+    BACKUP_DIR="${GT_ROOT}/.dolt-backup"
+    OFFSITE="$HOME/Library/Mobile Documents/com~apple~CloudDocs/gt-dolt-backup/"
+
+    if [ -d "$BACKUP_DIR" ] && [ -d "$(dirname "$OFFSITE")" ]; then
+      rsync -a --delete "$BACKUP_DIR/" "$OFFSITE" 2>&1 && echo "offsite=ok" || echo "offsite=failed"
+    else
+      echo "offsite=skipped"
+    fi
+    ```
+  #/
+
+  # report : llm
+    - sync
+    - offsite
+    @cost(max: 2000)
+    system>
+      You are a Dog reporting to the Deacon. Be terse.
+    context>
+      Sync results: {{sync}}
+      Offsite status: {{offsite}}
+    user>
+      Generate a backup report and signal completion.
+      Send: gt mail send deacon/ -s "DOG_DONE: backup" with summary.
+    format> report
+      { synced: number, total: number, offsite: str, failures: [str] }
+  #/
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/
