@@ -65,12 +65,27 @@
       - STRING: "..."
       - NUMBER: digits
 
+      Lexer modes (track state as you scan):
+
+      NORMAL mode (default):
+      - Structure tokens (COMMENT, MOL_OPEN, CELL_OPEN, etc) only match here
+      - SECTION_TAG transitions to PROMPT mode
+      - ```lang transitions to BLOCK mode
+      - format> is FORMAT_TAG (not SECTION_TAG) — stays in NORMAL
+
+      PROMPT mode (after SECTION_TAG):
+      - All indented lines → PROMPT_LINE (even if they contain - or {{ }})
+      - Exit on: outdent to cell level, another SECTION_TAG, or CELL_CLOSE
+      - ```lang inside prompt → BLOCK mode (nested code example)
+
+      BLOCK mode (inside ``` ... ```):
+      - All lines → BODY_LINE (opaque content)
+      - ``` at same indent → BLOCK_CLOSE, return to previous mode
+
       Rules:
-      - format> is FORMAT_TAG (not SECTION_TAG) because it takes a name argument
-      - Lines inside ```oracle...``` and ```bash...``` blocks are BODY_LINE
-      - Lines inside system>/user>/context>/etc are PROMPT_LINE
+      - Track indent depth: cell body is indent+2 from cell open
       - Preserve source positions (line:col) for each token
-      - Skip blank lines and pure-whitespace lines between tokens
+      - Skip blank lines between structural tokens
     user>
       Lex this Cell source:
       {{param.source}}

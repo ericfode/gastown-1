@@ -46,6 +46,60 @@ FRAG_REF    = "{{" "@" IDENT "}}"
 Whitespace is insignificant except inside strings and prompt lines.
 Comments extend to end of line.
 
+### Lexer Modes
+
+The grammar is context-free. The **lexer** is modal — it tracks three modes
+to disambiguate tokens that look identical in different contexts. This is
+analogous to Python's INDENT/DEDENT handling: the grammar doesn't change,
+but the scanner needs state.
+
+**Mode transitions:**
+
+```
+NORMAL ──── SECTION_TAG ───→ PROMPT
+NORMAL ──── ```lang ───────→ BLOCK
+PROMPT ──── (outdent) ─────→ NORMAL
+PROMPT ──── ```lang ───────→ BLOCK
+BLOCK  ──── ``` ───────────→ (previous mode)
+```
+
+**Mode NORMAL** (default):
+- `-- ...` → COMMENT
+- `## IDENT` → MOL_OPEN
+- `##/` → MOL_CLOSE
+- `# IDENT : type` → CELL_OPEN (also `map #`, `reduce #`, `meta #`)
+- `#/` → CELL_CLOSE (also `meta #/`)
+- `- IDENT` → REF_DECL (dependency)
+- `input param.IDENT ...` → INPUT_DECL
+- `@ IDENT(...)` → ANNOTATION
+- `{{ ... }}` → REF
+- `IDENT -> IDENT` → WIRE
+- `!verb ...` → OPERATION
+- `squash> ...` → SQUASH
+- `distill>` → DISTILL_OPEN
+- `format> IDENT` → FORMAT_TAG (note: not SECTION_TAG)
+- `system>` `context>` `user>` etc → SECTION_TAG (enters PROMPT mode)
+- `` ```lang `` → SCRIPT_OPEN or ORACLE_OPEN (enters BLOCK mode)
+
+**Mode PROMPT** (after SECTION_TAG, inside prompt content):
+- Indented lines → PROMPT_LINE (all content, including `- text`, `{{ refs }}`)
+- Outdent to cell/molecule level → exit to NORMAL
+- `` ```lang `` → enters BLOCK mode (nested code example in prompt)
+- Another SECTION_TAG at cell indent level → exit PROMPT, enter new PROMPT
+
+**Mode BLOCK** (inside ``` ... ``` delimiters):
+- All lines → BODY_LINE (opaque content)
+- `` ``` `` at same indent → BLOCK_CLOSE, return to previous mode
+
+**Indent tracking**: The lexer tracks the indent depth of the containing
+cell. Lines indented deeper than the cell body are content (PROMPT_LINE
+or BODY_LINE). Lines at cell indent level or less are structure tokens.
+
+**Why this matters for distillation**: Each mode is an independent
+distillation domain. NORMAL mode token rules, PROMPT mode rules, and
+BLOCK mode rules can crystallize separately. The mode transitions
+themselves are simple enough to distill immediately.
+
 ---
 
 ## 3. Grammar (EBNF)
