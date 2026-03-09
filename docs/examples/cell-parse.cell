@@ -1,0 +1,310 @@
+-- CELL PARSE — The Parser That Distills Itself
+--
+-- This is the second Cell program (after Cell Zero). It takes .cell
+-- source as input and produces a parse tree. The LLM does the parsing.
+-- The oracle validates the tree against the grammar. After enough
+-- consistent parses, the input→AST mappings distill into deterministic
+-- rules — and you have a parser.
+--
+-- The grammar is context-free. The oracle checks context-freedom.
+-- The distillation captures what the LLM learned about the grammar.
+-- The distilled parser IS the parser.
+--
+-- Lifecycle:
+--   llm parse → oracle validate → distill → deterministic parser
+--
+-- Feed it every .cell file. Each file is a test case. Each consistent
+-- parse is a vote for that rule. Enough votes → frozen rule.
+
+## cell-parse
+
+  input param.source : str required
+  input param.filename : str default("")
+
+  -- Phase 1: Lex — break source into tokens
+
+  # lex : llm
+    system>
+      You are a lexer for the Cell language. You break source code into
+      tokens according to the Cell lexical specification.
+
+      Token types:
+      - COMMENT: -- to end of line
+      - MOL_OPEN: ## followed by IDENT
+      - MOL_CLOSE: ##/
+      - CELL_OPEN: # followed by IDENT : cell_type
+      - CELL_CLOSE: #/
+      - META_CELL_OPEN: meta # followed by IDENT : cell_type
+      - META_CELL_CLOSE: meta #/
+      - MAP_PREFIX: map (before # or meta #)
+      - REDUCE_PREFIX: reduce (before # or meta #)
+      - SECTION_TAG: system> context> user> think> examples> format> accept> each>
+      - REF: {{ ... }}
+      - ANNOTATION: @ IDENT ( ... )
+      - ORACLE_OPEN: ```oracle
+      - SCRIPT_OPEN: ```bash or ```python etc
+      - CODE_CLOSE: ```
+      - SQUASH: squash> ...
+      - INPUT_DECL: input param.IDENT : type ...
+      - WIRE: IDENT -> IDENT
+      - OPERATION: !add !drop !wire !cut !split !merge !refine !seed
+      - DISTILL_OPEN: distill>
+      - REF_DECL: - IDENT (dependency wire)
+      - IDENT: identifier
+      - STRING: "..."
+      - NUMBER: digits
+      - INDENT: leading whitespace (significant in prompt lines)
+      - NEWLINE: line break
+
+      Preserve source positions (line:col) for each token.
+      Skip whitespace between tokens (except INDENT in prompt context).
+    user>
+      Lex this Cell source:
+      {{param.source}}
+    format> tokens
+      {
+        filename: str,
+        token_count: number,
+        tokens: [{
+          type: str,
+          value: str,
+          line: number,
+          col: number
+        }]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["token_count", "tokens"]);
+    assert output.token_count == len(output.tokens);
+    for t in output.tokens {
+      assert t.type in [
+        "COMMENT", "MOL_OPEN", "MOL_CLOSE",
+        "CELL_OPEN", "CELL_CLOSE",
+        "META_CELL_OPEN", "META_CELL_CLOSE",
+        "MAP_PREFIX", "REDUCE_PREFIX",
+        "SECTION_TAG", "REF", "ANNOTATION",
+        "ORACLE_OPEN", "SCRIPT_OPEN", "CODE_CLOSE",
+        "SQUASH", "INPUT_DECL", "WIRE", "OPERATION",
+        "DISTILL_OPEN", "REF_DECL",
+        "IDENT", "STRING", "NUMBER",
+        "INDENT", "NEWLINE",
+        "FORMAT_OPEN", "PRESET", "PROMPT_LINE",
+        "KEYWORD", "PUNCTUATION"
+      ];
+    }
+    ```
+  #/
+
+  -- Phase 2: Parse — build AST from tokens
+
+  # parse : llm
+    - lex
+    system>
+      You are a parser for the Cell language. You consume a token stream
+      and produce an abstract syntax tree. The grammar is context-free
+      and LL(2).
+
+      AST node types and their children:
+
+      Molecule: { name, inputs[], cells[], wires[], squash? }
+      Cell: { name, type, meta?, map_over?, reduce?, deps[], body }
+      CellBody (varies by type):
+        llm: { annotations[], prompts[], oracle?, format?, accept? }
+        script: { annotations[], script_lang, script_body, oracle? }
+        decision: { annotations[], prompts[], oracle?, format? }
+        text: { content }
+        distilled: { distill_block }
+        synthesis: { prompts[], format? }
+        inventory: { prompts[], format? }
+        mol(X): { molecule_ref, param_bindings }
+      PromptSection: { tag, guard?, content[] }
+      OracleBlock: { statements[] }
+      FormatBlock: { name, fields[] }
+      Wire: { from, to, guard? }
+      InputDecl: { name, type, modifiers[] }
+      Annotation: { name, args{} }
+      SquashDecl: { fields{} }
+      DistillBlock: { input_pattern, output_map{}, fallback }
+      RefDecl: { target, field?, optional? }
+
+      Build the tree by recursive descent. Report parse errors with
+      line numbers. A valid Cell file has exactly one molecule.
+    context>
+      Token stream ({{lex.token_count}} tokens):
+      {{lex}}
+    user>
+      Parse the token stream into an AST. Follow the Cell grammar
+      exactly. Report any syntax errors.
+    format> ast
+      {
+        valid: boolean,
+        errors: [{ line: number, message: str }],
+        molecule: {
+          name: str,
+          inputs: [{ name: str, type: str, modifiers: [str] }],
+          cells: [{
+            name: str,
+            type: str,
+            meta: boolean,
+            map_over: str,
+            deps: [str],
+            has_oracle: boolean,
+            has_format: boolean,
+            prompt_sections: [str]
+          }],
+          wires: [{ from: str, to: str }],
+          has_squash: boolean
+        }
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["valid", "molecule"]);
+    if output.valid {
+      assert len(output.molecule.cells) >= 1;
+      assert len(output.molecule.name) >= 1;
+      -- Every cell must have a type
+      for c in output.molecule.cells {
+        assert c.type in [
+          "llm", "script", "decision", "text", "distilled",
+          "synthesis", "inventory", "code", "laws", "boundaries",
+          "diagram", "mol"
+        ];
+      }
+    }
+    ```
+  #/
+
+  -- Phase 3: Validate — check semantic constraints
+
+  # validate : llm
+    - parse
+    system>
+      You are a semantic validator for Cell ASTs. You check constraints
+      that go beyond syntax:
+
+      1. Dependency resolution: every - ref points to a cell that exists
+      2. No circular dependencies (DAG check)
+      3. Wire endpoints exist as cell names
+      4. {{ref}} interpolations reference existing cells or params
+      5. Format blocks have valid type names
+      6. Oracle blocks are syntactically valid
+      7. Map cells have an "over" clause with a valid ref
+      8. Meta cells contain prompt content (they emit Cell source)
+      9. Input params referenced in cells are declared
+      10. Exactly one molecule per file
+    context>
+      AST:
+      {{parse}}
+    user>
+      Validate semantic constraints on this AST.
+      Report all violations found.
+    format> validation
+      {
+        valid: boolean,
+        cell_count: number,
+        dep_graph_acyclic: boolean,
+        unresolved_refs: [str],
+        violations: [{ rule: str, cell: str, message: str }]
+      }
+
+    ```oracle
+    json_parse(output);
+    keys_present(output, ["valid", "cell_count", "dep_graph_acyclic"]);
+    ```
+  #/
+
+  -- Phase 4: Emit — produce canonical representation
+
+  # emit : llm
+    - validate
+    - parse
+    system>
+      You produce a canonical representation of the parsed Cell AST.
+      This is the "round-trip" test: source → lex → parse → emit.
+      The emitted Cell source should be semantically identical to the
+      input, with normalized whitespace and consistent formatting.
+
+      Canonical formatting rules:
+      - 2-space indent inside molecules
+      - 4-space indent inside cells
+      - Blank line between cells
+      - Dependencies listed one per line
+      - Oracle blocks indented 4 spaces
+      - No trailing whitespace
+    context>
+      Original filename: {{param.filename}}
+      Parse result:
+      {{parse}}
+      Validation:
+      {{validate}}
+    user>
+      Emit canonical Cell source from the AST.
+      If validation found errors, emit the source anyway with
+      -- ERROR comments at the violation sites.
+    format> output
+      {
+        filename: str,
+        valid: boolean,
+        cell_source: str,
+        line_count: number,
+        cell_count: number
+      }
+
+    ```oracle
+    json_parse(output);
+    assert output.cell_count == {{parse.molecule.cells | len}};
+    -- Round-trip: emitted source must contain the molecule name
+    assert output.cell_source contains "## {{parse.molecule.name}}";
+    -- Must end with ##/
+    assert output.cell_source contains "##/";
+    ```
+  #/
+
+  -- Phase 5: Fingerprint — content-addressable identity
+
+  # fingerprint : script
+    - emit
+    ```bash
+    # Hash the canonical Cell source for content addressing
+    echo "{{emit.cell_source}}" | blake3sum 2>/dev/null || \
+    echo "{{emit.cell_source}}" | sha256sum | cut -d' ' -f1
+    ```
+  #/
+
+  # report : llm
+    - lex
+    - parse
+    - validate
+    - emit
+    - fingerprint
+    system>
+      You are writing a parse report. Be precise and terse.
+    user>
+      Parse complete for {{param.filename}}.
+
+      Tokens: {{lex.token_count}}
+      Cells: {{parse.molecule.cells}}
+      Valid: {{validate.valid}}
+      Violations: {{validate.violations}}
+      Fingerprint: {{fingerprint}}
+
+      One-paragraph summary. Note any grammar ambiguities or
+      patterns you see repeating across parses — these are
+      distillation candidates.
+    format> report
+      {
+        filename: str,
+        tokens: number,
+        cells: number,
+        valid: boolean,
+        fingerprint: str,
+        distillation_candidates: [str],
+        summary: str
+      }
+  #/
+
+  squash> trigger: on_complete template: parse include_metrics: true
+
+##/

@@ -21,9 +21,57 @@
   input param.min_runs : number default(10)
   input param.consistency_threshold : number default(0.95)
 
+  -- Phase 0: Validate — Cell Zero only executes valid Cell
+  --
+  -- Before observing anything, parse the target molecule through
+  -- cell-parse. If it doesn't parse clean, reject it. This is
+  -- the gate that ensures Cell Zero never distills garbage.
+  -- As cell-parse itself distills, this gate gets faster.
+
+  # load-source : script
+    ```bash
+    # Load the .cell source for the target molecule
+    cell_file=$(bd mol source "{{param.target_molecule}}" 2>/dev/null)
+    if [ -z "$cell_file" ]; then
+      echo "ERROR: no source found for {{param.target_molecule}}"
+      exit 1
+    fi
+    cat "$cell_file"
+    ```
+  #/
+
+  # validate-cell : mol(cell-parse)
+    - load-source
+    param.source = "{{load-source}}"
+    param.filename = "{{param.target_molecule}}.cell"
+  #/
+
+  # gate-valid : decision
+    - validate-cell
+    system>
+      You are the validity gate. If the Cell source parsed clean,
+      proceed. If there were parse errors, stop — Cell Zero does
+      not distill invalid Cell.
+    context>
+      Parse result:
+      {{validate-cell}}
+    user>
+      Did the parse succeed with zero errors?
+      If valid: PROCEED. If errors: REJECT with details.
+    format> gate
+      { action: "PROCEED" | "REJECT", errors: [str] }
+
+    ```oracle
+    json_parse(output);
+    assert output.action in ["PROCEED", "REJECT"];
+    reject if output.action == "REJECT";
+    ```
+  #/
+
   -- Phase 1: Observe — watch cells execute, record history
 
   # observe : script
+    - gate-valid
     ```bash
     # Query execution history for target molecule
     bd mol history "{{param.target_molecule}}" --json 2>/dev/null
