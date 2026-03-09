@@ -301,3 +301,73 @@ func TestRunBatchCellFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestDistilledExecutor(t *testing.T) {
+	exec := &DistilledExecutor{
+		Fallback: &MockExecutor{},
+	}
+
+	// Test with a distill section
+	cell := &CellExec{
+		Name: "decide",
+		Type: "distilled",
+		Inputs: map[string]string{
+			"observe": "deacon_alive=false and other stuff",
+		},
+		Prompts: []PromptMsg{
+			{
+				Role: "distill",
+				Content: `input_pattern: "{{observe}}"
+output_map: {
+  "deacon_alive=false" -> { action: "START", reason: "Dead session", confidence: 0.99 },
+  "deacon_alive=true" -> { action: "NOTHING", reason: "Alive", confidence: 0.95 }
+}
+fallback: llm`,
+			},
+		},
+	}
+
+	result, err := exec.Execute(context.Background(), cell)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	t.Logf("output: %s", result.Output)
+
+	// Should match "deacon_alive=false" pattern
+	if result.Fields["action"] != "START" {
+		t.Errorf("expected action=START, got %q", result.Fields["action"])
+	}
+}
+
+func TestDistilledExecutorNoMatch(t *testing.T) {
+	exec := &DistilledExecutor{
+		Fallback: &MockExecutor{},
+	}
+
+	cell := &CellExec{
+		Name:   "decide",
+		Type:   "distilled",
+		Inputs: map[string]string{"observe": "something_unexpected"},
+		Prompts: []PromptMsg{
+			{
+				Role: "distill",
+				Content: `input_pattern: "{{observe}}"
+output_map: {
+  "deacon_alive=false" -> { action: "START", reason: "Dead" }
+}
+fallback: llm`,
+			},
+		},
+	}
+
+	result, err := exec.Execute(context.Background(), cell)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No pattern matched, fallback to mock (non-JSON), should get default JSON
+	if result.Fields["action"] != "UNKNOWN" {
+		t.Errorf("expected action=UNKNOWN for no-match, got %q", result.Fields["action"])
+	}
+}

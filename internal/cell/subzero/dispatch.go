@@ -39,10 +39,9 @@ func (d *DispatchExecutor) Execute(ctx context.Context, cell *CellExec) (*CellRe
 		return nil, fmt.Errorf("BLOCKED: meta cells emit Cell source — not allowed in Sub-Zero v0")
 
 	case "distilled":
-		if d.LLM != nil {
-			return d.LLM.Execute(ctx, cell)
-		}
-		return &CellResult{Output: "distilled:stub"}, nil
+		// Use dedicated distilled executor with LLM fallback
+		de := &DistilledExecutor{Fallback: d.LLM}
+		return de.Execute(ctx, cell)
 
 	default:
 		return nil, fmt.Errorf("unknown cell type %q", cell.Type)
