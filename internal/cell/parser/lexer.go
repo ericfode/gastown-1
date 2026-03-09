@@ -15,6 +15,7 @@ type Lexer struct {
 	tokens  []Token
 	inCodeFence bool // inside ``` ... ```
 	codeFenceType string // e.g., "oracle", "sh"
+	inPrompt bool // inside a prompt section (after system>, user>, etc.)
 }
 
 // keywords maps keyword strings to token types.
@@ -92,6 +93,13 @@ func (l *Lexer) lex() error {
 	for l.pos < len(l.input) {
 		if l.inCodeFence {
 			if err := l.lexCodeFenceContent(); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if l.inPrompt {
+			if err := l.lexPromptContent(); err != nil {
 				return err
 			}
 			continue
@@ -306,6 +314,15 @@ func (l *Lexer) lex() error {
 				l.lexNumber()
 			} else if isIdentStart(ch) {
 				l.lexIdentOrKeyword()
+			} else if ch > 127 {
+				// Unicode character outside of prompt/code fence context.
+				// Consume as prompt text (common in comments that slipped through,
+				// prompt fragments, etc.)
+				start := l.pos
+				for l.pos < len(l.input) && l.input[l.pos] != '\n' {
+					l.advance()
+				}
+				l.emit(TokenPromptText, string(l.input[start:l.pos]))
 			} else {
 				return l.errorf("unexpected character: %c", ch)
 			}
@@ -408,6 +425,124 @@ func (l *Lexer) lexCodeFenceContent() error {
 	return l.errorf("unterminated code fence")
 }
 
+// lexPromptContent consumes prompt lines after a section tag (system>, user>, etc.).
+// It collects lines as TokenPromptText until it sees a structural token at the start
+// of a line: another section tag, cell close #/, code fence ```, etc.
+func (l *Lexer) lexPromptContent() error {
+	var lines []string
+
+	for l.pos < len(l.input) {
+		// Skip the newline at the start if we're right after the section tag
+		if l.input[l.pos] == '\n' {
+			l.advance()
+			l.line++
+			l.col = 1
+			continue
+		}
+
+		// Check if this line starts with a structural token (exit prompt mode)
+		lineStart := l.pos
+		savedLine := l.line
+		savedCol := l.col
+
+		// Skip leading whitespace to peek at line content
+		indent := 0
+		for l.pos < len(l.input) && (l.input[l.pos] == ' ' || l.input[l.pos] == '\t') {
+			indent++
+			l.advance()
+		}
+
+		if l.pos >= len(l.input) {
+			break
+		}
+
+		ch := l.input[l.pos]
+
+		// Check for structural tokens that end prompt mode
+		isStructural := false
+
+		// ##/ or ##
+		if ch == '#' && l.peek(1) == '#' {
+			isStructural = true
+		}
+		// #/ (cell end)
+		if ch == '#' && l.peek(1) == '/' {
+			isStructural = true
+		}
+		// # name : type (cell start) — # followed by space then ident
+		if ch == '#' && l.peek(1) == ' ' {
+			isStructural = true
+		}
+		// ``` (code fence)
+		if ch == '`' && l.peek(1) == '`' && l.peek(2) == '`' {
+			isStructural = true
+		}
+		// Section tag: word followed by >
+		if isIdentStart(ch) {
+			peekPos := l.pos
+			for peekPos < len(l.input) && isIdentChar(l.input[peekPos]) {
+				peekPos++
+			}
+			if peekPos < len(l.input) && l.input[peekPos] == '>' {
+				word := string(l.input[l.pos:peekPos])
+				if _, ok := sectionTags[word]; ok {
+					isStructural = true
+				}
+			}
+		}
+		// - ref (dependency declaration) at cell indent level
+		if ch == '-' && l.peek(1) == ' ' && indent <= 4 {
+			isStructural = true
+		}
+		// map # or reduce # or meta #
+		if isIdentStart(ch) {
+			peekPos := l.pos
+			for peekPos < len(l.input) && isIdentChar(l.input[peekPos]) {
+				peekPos++
+			}
+			if peekPos < len(l.input) {
+				word := string(l.input[l.pos:peekPos])
+				if word == "map" || word == "reduce" || word == "meta" || word == "input" {
+					isStructural = true
+				}
+			}
+		}
+
+		if isStructural {
+			// Restore position to line start — let normal lexer handle it
+			l.pos = lineStart
+			l.line = savedLine
+			l.col = savedCol
+			break
+		}
+
+		// Not structural — collect this line as prompt text
+		l.pos = lineStart
+		l.line = savedLine
+		l.col = savedCol
+
+		start := l.pos
+		for l.pos < len(l.input) && l.input[l.pos] != '\n' {
+			l.advance()
+		}
+		line := string(l.input[start:l.pos])
+		lines = append(lines, line)
+
+		if l.pos < len(l.input) {
+			l.advance() // consume newline
+			l.line++
+			l.col = 1
+		}
+	}
+
+	if len(lines) > 0 {
+		l.emit(TokenPromptText, strings.Join(lines, "\n"))
+	}
+
+	l.inPrompt = false
+	return nil
+}
+
 func (l *Lexer) lexString() error {
 	l.advance() // consume opening "
 	var sb strings.Builder
@@ -481,6 +616,12 @@ func (l *Lexer) lexIdentOrKeyword() {
 		if tt, ok := sectionTags[word]; ok {
 			l.advance() // consume >
 			l.emit(tt, word+">")
+			// Enter prompt mode for tags with free-text content
+			// (NOT each>, format>, vars>, squash> which have structured syntax)
+			if word == "system" || word == "context" || word == "user" ||
+				word == "think" || word == "examples" || word == "accept" {
+				l.inPrompt = true
+			}
 			return
 		}
 	}
@@ -489,6 +630,20 @@ func (l *Lexer) lexIdentOrKeyword() {
 	if word == "prompt" && l.pos < len(l.input) && l.input[l.pos] == '@' {
 		l.advance() // consume @
 		l.emit(TokenPromptAt, "prompt@")
+		// After the name token, the following lines are prompt content
+		// We'll enter prompt mode after the next ident (the fragment name)
+		// Actually, lex the name here then enter prompt mode
+		for l.pos < len(l.input) && (l.input[l.pos] == ' ' || l.input[l.pos] == '\t') {
+			l.advance()
+		}
+		if l.pos < len(l.input) && isIdentStart(l.input[l.pos]) {
+			nameStart := l.pos
+			for l.pos < len(l.input) && isIdentChar(l.input[l.pos]) {
+				l.advance()
+			}
+			l.emit(TokenIdent, string(l.input[nameStart:l.pos]))
+		}
+		l.inPrompt = true
 		return
 	}
 

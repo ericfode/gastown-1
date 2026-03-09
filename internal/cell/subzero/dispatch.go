@@ -13,7 +13,7 @@ type DispatchExecutor struct {
 
 func (d *DispatchExecutor) Execute(ctx context.Context, cell *CellExec) (*CellResult, error) {
 	switch cell.Type {
-	case "llm", "decision":
+	case "llm", "decision", "text":
 		if d.LLM == nil {
 			return nil, fmt.Errorf("no LLM executor configured")
 		}
