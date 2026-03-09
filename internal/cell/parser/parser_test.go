@@ -600,3 +600,142 @@ func TestWireChainEndingFanOut(t *testing.T) {
 		t.Errorf("wire 1: expected b->[c,d], got %s->%v", mol.Wires[1].From, mol.Wires[1].ToList)
 	}
 }
+
+func TestParseHumanCell(t *testing.T) {
+	source := `## deploy {
+  # run-tests : script
+    ` + "```" + `bash
+    echo "tests passed"
+    ` + "```" + `
+  #/
+
+  # approve : human
+    - run-tests
+    user>
+      Tests passed: {{run-tests}}
+      Deploy to production?
+    format> approval
+      { approved: boolean, reason: str }
+  #/
+
+  run-tests -> approve
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	mol := prog.Molecules[0]
+	if len(mol.Cells) != 2 {
+		t.Fatalf("expected 2 cells, got %d", len(mol.Cells))
+	}
+
+	human := mol.Cells[1]
+	if human.Name != "approve" {
+		t.Errorf("expected cell name 'approve', got %q", human.Name)
+	}
+	if human.Type.Name != "human" {
+		t.Errorf("expected cell type 'human', got %q", human.Type.Name)
+	}
+	if len(human.Refs) != 1 || human.Refs[0].Name != "run-tests" {
+		t.Errorf("expected ref to run-tests, got %v", human.Refs)
+	}
+
+	// Should have user> and format> sections
+	hasUser := false
+	hasFormat := false
+	for _, ps := range human.Prompts {
+		if ps.Tag == "user" {
+			hasUser = true
+		}
+		if ps.Tag == "format" {
+			hasFormat = true
+		}
+	}
+	if !hasUser {
+		t.Error("expected user> section on human cell")
+	}
+	if !hasFormat {
+		t.Error("expected format> section on human cell")
+	}
+}
+
+func TestParseHumanCellRawText(t *testing.T) {
+	source := `## feedback {
+  # ask : human
+    user>
+      What changes do you want?
+  #/
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	human := prog.Molecules[0].Cells[0]
+	if human.Type.Name != "human" {
+		t.Errorf("expected type 'human', got %q", human.Type.Name)
+	}
+
+	// Should validate clean (no format = raw text)
+	errs := Validate(prog)
+	for _, e := range errs {
+		if e.Severity == "error" {
+			t.Errorf("unexpected validation error: %s", e.Message)
+		}
+	}
+}
+
+func TestValidateHumanCellMissingUser(t *testing.T) {
+	source := `## broken {
+  # gate : human
+    format> approval
+      { approved: boolean }
+  #/
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	errs := Validate(prog)
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Message, "must have a user> section") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected validation error for human cell without user>")
+	}
+}
+
+func TestValidateHumanCellForbiddenSections(t *testing.T) {
+	source := `## broken {
+  # gate : human
+    system>
+      You are a gate.
+    user>
+      Approve?
+  #/
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	errs := Validate(prog)
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Message, "must not have system>") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected validation error for human cell with system>")
+	}
+}

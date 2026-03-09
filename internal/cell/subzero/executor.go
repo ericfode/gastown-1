@@ -8,7 +8,7 @@ import (
 // CellExec is the execution request for a single cell.
 type CellExec struct {
 	Name    string
-	Type    string // "llm", "script", "decision", "oracle", "meta", "mol", "distilled"
+	Type    string // "llm", "script", "decision", "oracle", "meta", "mol", "distilled", "human"
 	Prompts []PromptMsg
 	Script     string            // bash script body for script cells
 	Inputs     map[string]string // resolved ref values

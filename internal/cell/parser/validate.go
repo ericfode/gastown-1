@@ -89,7 +89,7 @@ func validateMolecule(mol *Molecule, prog *Program) []*ValidationError {
 		fragments[f.Name] = f.Pos
 	}
 
-	// Validate cell references
+	// Validate cell references and human cell constraints
 	for _, c := range mol.Cells {
 		for _, ref := range c.Refs {
 			refName := ref.Name
@@ -100,6 +100,9 @@ func validateMolecule(mol *Molecule, prog *Program) []*ValidationError {
 					Pos:      ref.Pos,
 				})
 			}
+		}
+		if c.Type.Name == "human" {
+			errs = append(errs, validateHumanCell(c)...)
 		}
 	}
 
@@ -226,6 +229,35 @@ func checkDAGCycles(mol *Molecule) []*ValidationError {
 				break // Report first cycle only
 			}
 		}
+	}
+
+	return errs
+}
+
+// validateHumanCell checks constraints specific to human cells.
+func validateHumanCell(c *Cell) []*ValidationError {
+	var errs []*ValidationError
+
+	hasUser := false
+	for _, ps := range c.Prompts {
+		switch ps.Tag {
+		case "user":
+			hasUser = true
+		case "system", "context", "think", "examples":
+			errs = append(errs, &ValidationError{
+				Message:  fmt.Sprintf("human cell %q must not have %s> section (LLM-specific)", c.Name, ps.Tag),
+				Severity: "error",
+				Pos:      ps.Pos,
+			})
+		}
+	}
+
+	if !hasUser {
+		errs = append(errs, &ValidationError{
+			Message:  fmt.Sprintf("human cell %q must have a user> section", c.Name),
+			Severity: "error",
+			Pos:      c.Pos,
+		})
 	}
 
 	return errs
