@@ -1,0 +1,126 @@
+-- Gas Town Boot — verification-gated lifecycle molecule.
+-- Mayor bootstraps the town: daemon → deacon → witnesses + refineries → health check.
+-- Demonstrates: script cells, parallel groups, verification oracles.
+
+## gastown-boot
+
+  -- Phase 1: Infrastructure
+
+  # ensure-daemon : script
+    @retry(max: 2)
+    ```bash
+    gt daemon status || gt daemon start
+    # Verify
+    test -f "$GT_TOWN_ROOT/daemon/daemon.pid" && \
+      kill -0 $(cat "$GT_TOWN_ROOT/daemon/daemon.pid") && \
+      gt daemon status
+    ```
+
+    ```oracle
+    assert output contains "running" or output contains "started";
+    ```
+  #/
+
+  # ensure-deacon : script
+    - ensure-daemon
+    @retry(max: 3)
+    ```bash
+    gt deacon start
+    sleep 5
+    # Verify
+    tmux has-session -t hq-deacon 2>/dev/null && echo "session_alive"
+    gt peek deacon/ --lines 5
+    ```
+
+    ```oracle
+    assert output contains "session_alive";
+    reject if output contains "> Try";
+    ```
+  #/
+
+  -- Phase 2: Witnesses (parallel — no deps between them)
+
+  # ensure-gastown-witness : script
+    - ensure-deacon
+    @retry(max: 2)
+    ```bash
+    gt witness start gastown
+    sleep 3
+    tmux has-session -t gastown-witness 2>/dev/null && echo "witness_alive"
+    ```
+
+    ```oracle
+    assert output contains "witness_alive";
+    ```
+  #/
+
+  # ensure-beads-witness : script
+    - ensure-deacon
+    @retry(max: 2)
+    ```bash
+    gt witness start beads
+    sleep 3
+    tmux has-session -t beads-witness 2>/dev/null && echo "witness_alive"
+    ```
+
+    ```oracle
+    assert output contains "witness_alive";
+    ```
+  #/
+
+  -- Phase 2b: Refineries (parallel — no deps between them, same phase as witnesses)
+
+  # ensure-gastown-refinery : script
+    - ensure-deacon
+    @retry(max: 2)
+    ```bash
+    gt refinery start gastown
+    sleep 3
+    tmux has-session -t gastown-refinery 2>/dev/null && echo "refinery_alive"
+    ```
+
+    ```oracle
+    assert output contains "refinery_alive";
+    ```
+  #/
+
+  # ensure-beads-refinery : script
+    - ensure-deacon
+    @retry(max: 2)
+    ```bash
+    gt refinery start beads
+    sleep 3
+    tmux has-session -t beads-refinery 2>/dev/null && echo "refinery_alive"
+    ```
+
+    ```oracle
+    assert output contains "refinery_alive";
+    ```
+  #/
+
+  -- Phase 3: Health check (depends on ALL phase 2 cells)
+
+  # verify-town-health : script
+    - ensure-gastown-witness
+    - ensure-beads-witness
+    - ensure-gastown-refinery
+    - ensure-beads-refinery
+    ```bash
+    gt status
+    ```
+
+    ```oracle
+    assert output contains "daemon" and output contains "deacon";
+    score health {
+      +1 if output contains "gastown-witness";
+      +1 if output contains "beads-witness";
+      +1 if output contains "gastown-refinery";
+      +1 if output contains "beads-refinery";
+    }
+    accept if health >= 3;
+    ```
+  #/
+
+  squash> trigger: on_complete template: boot include_metrics: true
+
+##/
