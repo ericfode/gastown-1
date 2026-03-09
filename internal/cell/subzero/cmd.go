@@ -39,8 +39,15 @@ func RunFile(path string, params map[string]string, mode string, maxCells int) e
 			LLM:    &LLMExecutor{},
 			Script: &ScriptExecutor{TimeoutSec: 30},
 		}
+	case "full":
+		// Full mode: LLM + script + polecat (bounded depth=0)
+		executor = &DispatchExecutor{
+			LLM:     &LLMExecutor{},
+			Script:  &ScriptExecutor{TimeoutSec: 30},
+			Polecat: &PolecatExecutor{Depth: 0},
+		}
 	default:
-		return fmt.Errorf("unknown mode %q (use 'mock' or 'llm')", mode)
+		return fmt.Errorf("unknown mode %q (use 'mock', 'llm', or 'full')", mode)
 	}
 
 	if maxCells <= 0 {

@@ -7,8 +7,9 @@ import (
 
 // DispatchExecutor routes cells to the appropriate executor by type.
 type DispatchExecutor struct {
-	LLM    Executor // for llm, decision cells
-	Script Executor // for script cells
+	LLM     Executor // for llm, decision cells
+	Script  Executor // for script cells
+	Polecat Executor // for mol() cells (nil = blocked)
 }
 
 func (d *DispatchExecutor) Execute(ctx context.Context, cell *CellExec) (*CellResult, error) {
@@ -29,7 +30,10 @@ func (d *DispatchExecutor) Execute(ctx context.Context, cell *CellExec) (*CellRe
 		return &CellResult{Output: "oracle:pass"}, nil
 
 	case "mol":
-		return nil, fmt.Errorf("BLOCKED: mol() cells spawn external agents — not allowed in Sub-Zero")
+		if d.Polecat != nil {
+			return d.Polecat.Execute(ctx, cell)
+		}
+		return nil, fmt.Errorf("BLOCKED: mol() cells spawn external agents — not allowed in Sub-Zero (enable with Polecat executor)")
 
 	case "meta":
 		return nil, fmt.Errorf("BLOCKED: meta cells emit Cell source — not allowed in Sub-Zero v0")
