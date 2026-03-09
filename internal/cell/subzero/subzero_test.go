@@ -520,3 +520,102 @@ func TestOracleForLoop(t *testing.T) {
 		t.Error("expected failure for invalid item, got nil")
 	}
 }
+
+// --- Reduce loop tests ---
+
+func TestReduceBoundedLoop(t *testing.T) {
+	// reduce # counter : script over 3 as i with acc = "0"
+	//   ```bash
+	//   echo $(({{acc}} + 1))
+	//   ```
+	// #/
+	mol := &parser.Molecule{
+		Name: "test-reduce",
+		ReduceCells: []*parser.ReduceCell{
+			{
+				Name:     "counter",
+				Type:     parser.CellType{Name: "script"},
+				TimesN:   3,
+				AsIdent:  "i",
+				AccIdent: "acc",
+				AccDefault: parser.Value{Kind: "string", Str: "0"},
+				Body: &parser.Cell{
+					Name: "counter",
+					Type: parser.CellType{Name: "script"},
+					ScriptBody: "echo $(({{acc}} + 1))",
+				},
+			},
+		},
+	}
+
+	runner := &Runner{
+		Executor: &DispatchExecutor{
+			Script: &ScriptExecutor{TimeoutSec: 5},
+		},
+	}
+
+	results, err := runner.Run(context.Background(), mol)
+	if err != nil {
+		t.Fatalf("reduce loop failed: %v", err)
+	}
+
+	result, ok := results["counter"]
+	if !ok {
+		t.Fatal("expected counter result")
+	}
+	// After 3 iterations: 0+1=1, 1+1=2, 2+1=3
+	got := strings.TrimSpace(result.Output)
+	if got != "3" {
+		t.Errorf("reduce result = %q, want %q", got, "3")
+	}
+}
+
+func TestReduceEarlyExit(t *testing.T) {
+	// reduce # retry : script over 5 as i with acc = "" until(found)
+	// Body echoes JSON with found=true on iteration 2
+	mol := &parser.Molecule{
+		Name: "test-until",
+		ReduceCells: []*parser.ReduceCell{
+			{
+				Name:       "retry",
+				Type:       parser.CellType{Name: "script"},
+				TimesN:     5,
+				AsIdent:    "i",
+				AccIdent:   "acc",
+				AccDefault: parser.Value{Kind: "string", Str: ""},
+				UntilField: "found",
+				Body: &parser.Cell{
+					Name:       "retry",
+					Type:       parser.CellType{Name: "script"},
+					ScriptBody: `if [ "{{i}}" = "2" ]; then echo '{"found":"true","result":"got it"}'; else echo '{"found":"false","result":"nope"}'; fi`,
+				},
+			},
+		},
+	}
+
+	runner := &Runner{
+		Executor: &DispatchExecutor{
+			Script: &ScriptExecutor{TimeoutSec: 5},
+		},
+	}
+
+	results, err := runner.Run(context.Background(), mol)
+	if err != nil {
+		t.Fatalf("reduce early exit failed: %v", err)
+	}
+
+	result := results["retry"]
+	if result == nil {
+		t.Fatal("expected retry result")
+	}
+	// Should have exited on iteration 2 (i=2), not run all 5
+	if result.Fields == nil {
+		t.Fatal("expected Fields to be populated")
+	}
+	if result.Fields["found"] != "true" {
+		t.Errorf("Fields[found] = %q, want %q", result.Fields["found"], "true")
+	}
+	if result.Fields["result"] != "got it" {
+		t.Errorf("Fields[result] = %q, want %q", result.Fields["result"], "got it")
+	}
+}

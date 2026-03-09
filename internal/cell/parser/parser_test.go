@@ -803,3 +803,64 @@ func TestValidateFieldRefUnknownField(t *testing.T) {
 		t.Errorf("expected at least 2 field warnings (ref decl + inline), got %d", warnings)
 	}
 }
+
+func TestReduceBoundedLoop(t *testing.T) {
+	source := `## retry-test {
+  reduce # attempt : llm over 3 as i with acc = "none"
+    user>
+      Attempt {{i}}, previous: {{acc}}
+  #/
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	if len(prog.Molecules) != 1 {
+		t.Fatalf("expected 1 molecule, got %d", len(prog.Molecules))
+	}
+	mol := prog.Molecules[0]
+	if len(mol.ReduceCells) != 1 {
+		t.Fatalf("expected 1 reduce cell, got %d", len(mol.ReduceCells))
+	}
+
+	rc := mol.ReduceCells[0]
+	if rc.TimesN != 3 {
+		t.Errorf("TimesN = %d, want 3", rc.TimesN)
+	}
+	if rc.AsIdent != "i" {
+		t.Errorf("AsIdent = %q, want %q", rc.AsIdent, "i")
+	}
+	if rc.AccIdent != "acc" {
+		t.Errorf("AccIdent = %q, want %q", rc.AccIdent, "acc")
+	}
+	if rc.AccDefault.Str != "none" {
+		t.Errorf("AccDefault = %q, want %q", rc.AccDefault.Str, "none")
+	}
+	if rc.OverRef != "" {
+		t.Errorf("OverRef should be empty for bounded loop, got %q", rc.OverRef)
+	}
+}
+
+func TestReduceUntilGuard(t *testing.T) {
+	source := `## retry-test {
+  reduce # attempt : llm over 5 as i with acc = "none" until(done)
+    user>
+      Attempt {{i}}, previous: {{acc}}
+  #/
+##/`
+
+	prog, err := Parse(source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	rc := prog.Molecules[0].ReduceCells[0]
+	if rc.TimesN != 5 {
+		t.Errorf("TimesN = %d, want 5", rc.TimesN)
+	}
+	if rc.UntilField != "done" {
+		t.Errorf("UntilField = %q, want %q", rc.UntilField, "done")
+	}
+}

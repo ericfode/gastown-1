@@ -66,13 +66,17 @@ type MapCell struct {
 }
 
 // ReduceCell is a reduce # name : type over ref as ident with acc = val ... #/ construct.
+// When TimesN > 0, the reduce iterates TimesN times (bounded loop) instead of over a ref.
+// UntilField enables early exit: iteration stops when acc.UntilField is truthy.
 type ReduceCell struct {
 	Name       string
 	Type       CellType
-	OverRef    string
+	OverRef    string   // cell ref to iterate over (empty when TimesN > 0)
+	TimesN     int      // bounded iteration count (0 = use OverRef)
 	AsIdent    string
 	AccIdent   string
 	AccDefault Value
+	UntilField string   // early exit: stop when acc[UntilField] is truthy (empty = no early exit)
 	Body       *Cell
 	Pos        Position
 }

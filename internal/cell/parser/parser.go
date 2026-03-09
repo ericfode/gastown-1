@@ -938,7 +938,17 @@ func (p *Parser) parseReduceCell() *ReduceCell {
 	p.expectKeyword("over")
 
 	overRef := ""
-	if p.check(TokenDoubleLBrace) {
+	timesN := 0
+	if p.check(TokenNumber) {
+		// reduce # name : type over N as ... — bounded iteration
+		n, err := strconv.Atoi(p.current().Value)
+		if err == nil && n > 0 {
+			timesN = n
+		} else {
+			p.addError("reduce 'over N' requires positive integer, got %s", p.current().Value)
+		}
+		p.advance()
+	} else if p.check(TokenDoubleLBrace) {
 		p.advance()
 		overRef = p.expectIdent()
 		if p.check(TokenDot) {
@@ -963,6 +973,16 @@ func (p *Parser) parseReduceCell() *ReduceCell {
 	p.expect(TokenEquals)
 	accDefault := p.parseValue()
 
+	// Optional: until(field) for early exit
+	untilField := ""
+	p.skipNewlines()
+	if p.check(TokenIdent) && p.current().Value == "until" {
+		p.advance()
+		p.expect(TokenLParen)
+		untilField = p.expectIdent()
+		p.expect(TokenRParen)
+	}
+
 	body := &Cell{Name: name, Type: cellType, Pos: pos}
 	p.skipNewlines()
 	p.parseCellBody(body)
@@ -973,9 +993,11 @@ func (p *Parser) parseReduceCell() *ReduceCell {
 		Name:       name,
 		Type:       cellType,
 		OverRef:    overRef,
+		TimesN:     timesN,
 		AsIdent:    asIdent,
 		AccIdent:   accIdent,
 		AccDefault: accDefault,
+		UntilField: untilField,
 		Body:       body,
 		Pos:        pos,
 	}

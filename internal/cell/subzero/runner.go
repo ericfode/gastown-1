@@ -43,6 +43,18 @@ func (r *Runner) Run(ctx context.Context, mol *parser.Molecule) (map[string]*Cel
 		}
 
 		cell := cells[name]
+
+		// Reduce cells get special sequential iteration
+		if cell.reduce != nil && cell.reduce.TimesN > 0 {
+			result, n, err := r.executeReduceLoop(ctx, cell, outputs, maxCells-executed)
+			if err != nil {
+				return outputs, fmt.Errorf("cell %q: %w", name, err)
+			}
+			outputs[name] = result
+			executed += n
+			continue
+		}
+
 		exec := r.buildCellExec(cell, outputs)
 		result, err := r.Executor.Execute(ctx, exec)
 		if err != nil {
@@ -69,6 +81,8 @@ type cellInfo struct {
 	typ  string
 	refs []string
 	cell *parser.Cell
+	// reduce cell metadata (nil for plain/map cells)
+	reduce *parser.ReduceCell
 }
 
 // allCells extracts all cells (plain, map, reduce) into a flat map.
@@ -91,13 +105,16 @@ func allCells(mol *parser.Molecule) map[string]*cellInfo {
 		m[mc.Name] = &cellInfo{name: mc.Name, typ: mc.Type.Name, refs: refs, cell: mc.Body}
 	}
 	for _, rc := range mol.ReduceCells {
-		refs := []string{rc.OverRef}
+		var refs []string
+		if rc.OverRef != "" {
+			refs = append(refs, rc.OverRef)
+		}
 		if rc.Body != nil {
 			for _, r := range rc.Body.Refs {
 				refs = append(refs, r.Name)
 			}
 		}
-		m[rc.Name] = &cellInfo{name: rc.Name, typ: rc.Type.Name, refs: refs, cell: rc.Body}
+		m[rc.Name] = &cellInfo{name: rc.Name, typ: rc.Type.Name, refs: refs, cell: rc.Body, reduce: rc}
 	}
 	return m
 }
@@ -165,6 +182,11 @@ func (r *Runner) buildCellExec(info *cellInfo, outputs map[string]*CellResult) *
 		}
 	}
 
+	// Extract script body for script cells
+	if info.cell.ScriptBody != "" {
+		exec.Script = ResolveRefs(info.cell.ScriptBody, outputs, r.Params)
+	}
+
 	// Assemble prompts with ref substitution
 	for _, ps := range info.cell.Prompts {
 		content := ""
@@ -184,6 +206,92 @@ func (r *Runner) buildCellExec(info *cellInfo, outputs map[string]*CellResult) *
 	}
 
 	return exec
+}
+
+// executeReduceLoop runs a bounded reduce cell N times with accumulator and optional early exit.
+// Returns the final result, number of iterations executed, and any error.
+func (r *Runner) executeReduceLoop(ctx context.Context, cell *cellInfo, outputs map[string]*CellResult, budget int) (*CellResult, int, error) {
+	rc := cell.reduce
+	n := rc.TimesN
+	if n > budget {
+		return nil, 0, fmt.Errorf("reduce %q needs %d iterations but only %d executions remain", cell.name, n, budget)
+	}
+
+	// Initialize accumulator from default value
+	acc := valueToString(rc.AccDefault)
+
+	var lastResult *CellResult
+	for i := 0; i < n; i++ {
+		// Build iteration-specific outputs: inject acc and iteration index
+		iterOutputs := make(map[string]*CellResult, len(outputs)+2)
+		for k, v := range outputs {
+			iterOutputs[k] = v
+		}
+		// Make accumulator available as {{accIdent}} and iteration as {{asIdent}}
+		iterOutputs[rc.AccIdent] = &CellResult{
+			Output: acc,
+			Fields: parseJSONFields(acc),
+		}
+		iterOutputs[rc.AsIdent] = &CellResult{
+			Output: fmt.Sprintf("%d", i),
+		}
+
+		exec := r.buildCellExec(cell, iterOutputs)
+		result, err := r.Executor.Execute(ctx, exec)
+		if err != nil {
+			return nil, i, fmt.Errorf("iteration %d: %w", i, err)
+		}
+
+		// Oracle validation per iteration
+		if cell.cell != nil && cell.cell.Oracle != nil {
+			if oracleErr := EvalOracle(cell.cell.Oracle, result.Output); oracleErr != nil {
+				return nil, i, fmt.Errorf("iteration %d oracle failed: %w", i, oracleErr)
+			}
+		}
+
+		lastResult = result
+		acc = result.Output
+
+		// Early exit: check until(field)
+		if rc.UntilField != "" && result.Fields != nil {
+			if v, ok := result.Fields[rc.UntilField]; ok && isTruthy(v) {
+				return result, i + 1, nil
+			}
+		}
+	}
+
+	if lastResult == nil {
+		lastResult = &CellResult{Output: acc, Fields: parseJSONFields(acc)}
+	}
+	return lastResult, n, nil
+}
+
+// valueToString converts a parser.Value to a string representation.
+func valueToString(v parser.Value) string {
+	switch v.Kind {
+	case "string":
+		return v.Str
+	case "number":
+		if v.Num == float64(int(v.Num)) {
+			return fmt.Sprintf("%d", int(v.Num))
+		}
+		return fmt.Sprintf("%g", v.Num)
+	case "bool":
+		if v.Bool {
+			return "true"
+		}
+		return "false"
+	case "null":
+		return ""
+	default:
+		b, _ := json.Marshal(v.Str)
+		return string(b)
+	}
+}
+
+// isTruthy checks if a string value is truthy (non-empty, non-"false", non-"0").
+func isTruthy(s string) bool {
+	return s != "" && s != "false" && s != "0" && s != "null"
 }
 
 // generateMockJSON creates a minimal valid JSON object from a FormatSpec.

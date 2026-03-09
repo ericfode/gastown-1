@@ -258,9 +258,19 @@ func (p *printer) printMapCell(mc *MapCell, level int) {
 
 func (p *printer) printReduceCell(rc *ReduceCell, level int) {
 	p.indent(level)
-	p.write("reduce # %s : %s over {{%s}} as %s with %s = %s\n",
-		rc.Name, formatCellType(rc.Type), rc.OverRef, rc.AsIdent,
-		rc.AccIdent, formatValue(rc.AccDefault))
+	if rc.TimesN > 0 {
+		p.write("reduce # %s : %s over %d as %s with %s = %s",
+			rc.Name, formatCellType(rc.Type), rc.TimesN, rc.AsIdent,
+			rc.AccIdent, formatValue(rc.AccDefault))
+	} else {
+		p.write("reduce # %s : %s over {{%s}} as %s with %s = %s",
+			rc.Name, formatCellType(rc.Type), rc.OverRef, rc.AsIdent,
+			rc.AccIdent, formatValue(rc.AccDefault))
+	}
+	if rc.UntilField != "" {
+		p.write(" until(%s)", rc.UntilField)
+	}
+	p.write("\n")
 
 	if rc.Body != nil {
 		for _, section := range rc.Body.Prompts {

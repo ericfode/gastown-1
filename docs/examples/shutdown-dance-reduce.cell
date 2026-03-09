@@ -1,0 +1,53 @@
+-- Shutdown Dance v2 — using bounded reduce loop.
+-- Same state machine as shutdown-dance.cell but without manual unrolling.
+-- Demonstrates: reduce over N, until(field) early exit, accumulator state.
+
+## shutdown-dance
+
+  input param.target_session : str required
+  input param.warrant_id : str required
+
+  -- Bounded retry: up to 3 interrogation attempts, early exit on response
+  reduce # interrogate : script over 3 as attempt with acc = "" until(alive)
+    ```bash
+    if [ "{{acc}}" != "" ]; then
+      PREV=$(echo '{{acc}}' | grep -o '"alive":"[^"]*"' | cut -d'"' -f4)
+      if [ "$PREV" = "true" ]; then
+        echo '{"alive":"true","evidence":"pardoned in earlier attempt"}'
+        exit 0
+      fi
+    fi
+
+    TIMEOUT=$((60 * ({{attempt}} + 1)))
+    tmux send-keys -t "{{param.target_session}}" \
+      "echo ALIVE_CHECK_{{param.warrant_id}}_{{attempt}}" Enter
+    sleep $TIMEOUT
+    OUTPUT=$(tmux capture-pane -t "{{param.target_session}}" -p | tail -20)
+
+    if echo "$OUTPUT" | grep -q "ALIVE"; then
+      echo "{\"alive\":\"true\",\"evidence\":\"$OUTPUT\"}"
+    else
+      echo "{\"alive\":\"false\",\"evidence\":\"no response after ${TIMEOUT}s\"}"
+    fi
+    ```
+  #/
+
+  -- Terminal: execute or pardon based on final accumulator
+  # execute-or-pardon : script
+    - interrogate
+    ```bash
+    ALIVE=$(echo '{{interrogate}}' | grep -o '"alive":"[^"]*"' | cut -d'"' -f4)
+    if [ "$ALIVE" = "true" ]; then
+      echo "outcome=PARDONED"
+      echo "Session responded. Warrant cancelled."
+    else
+      echo "outcome=EXECUTED"
+      echo "Killing session: {{param.target_session}}"
+      tmux kill-session -t "{{param.target_session}}" 2>/dev/null
+    fi
+    ```
+  #/
+
+  squash> trigger: on_complete template: work include_metrics: true
+
+##/
