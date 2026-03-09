@@ -135,6 +135,15 @@ func (r *resolver) loadFile(name string) (*Program, error) {
 		return prog, nil
 	}
 
+	// Validate import name: reject path separators and traversal components.
+	// Import names must be simple identifiers (may contain hyphens/underscores).
+	if strings.ContainsAny(name, `/\`) {
+		return nil, fmt.Errorf("invalid import name %q: path separators not allowed", name)
+	}
+	if name == ".." || name == "." {
+		return nil, fmt.Errorf("invalid import name %q: path traversal not allowed", name)
+	}
+
 	// Resolve file path.
 	filename := name + ".cell"
 	// Handle hyphenated names (import foo-bar → foo-bar.cell).
@@ -162,21 +171,42 @@ func (r *resolver) loadFile(name string) (*Program, error) {
 func (r *resolver) findFile(filename string) string {
 	// Search BaseDir first.
 	if r.opts.BaseDir != "" {
-		p := filepath.Join(r.opts.BaseDir, filename)
-		if _, err := os.Stat(p); err == nil {
+		if p, ok := r.safeJoin(r.opts.BaseDir, filename); ok {
 			return p
 		}
 	}
 
 	// Then search paths.
 	for _, dir := range r.opts.SearchPaths {
-		p := filepath.Join(dir, filename)
-		if _, err := os.Stat(p); err == nil {
+		if p, ok := r.safeJoin(dir, filename); ok {
 			return p
 		}
 	}
 
 	return ""
+}
+
+// safeJoin joins dir and filename, then verifies the result stays within dir.
+// Returns the resolved path and true if the file exists and is safe.
+func (r *resolver) safeJoin(dir, filename string) (string, bool) {
+	p := filepath.Join(dir, filename)
+	// Resolve to absolute to catch symlink/traversal escapes.
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", false
+	}
+	absP, err := filepath.Abs(p)
+	if err != nil {
+		return "", false
+	}
+	// Ensure the resolved path is within the directory.
+	if !strings.HasPrefix(absP, absDir+string(filepath.Separator)) {
+		return "", false
+	}
+	if _, err := os.Stat(p); err == nil {
+		return p, true
+	}
+	return "", false
 }
 
 func (r *resolver) searchDescription() string {

@@ -377,6 +377,65 @@ func TestResolveTransitiveImport(t *testing.T) {
 	}
 }
 
+func TestResolvePathTraversal(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file outside the base dir to prove we can't reach it.
+	parentDir := filepath.Dir(dir)
+	writeCell(t, parentDir, "secret.cell", `
+## secret
+  # leaked : llm
+    user>
+      This should not be importable.
+  #/
+##/
+`)
+
+	tests := []struct {
+		name       string
+		importName string
+		wantErr    string
+	}{
+		{"dot-dot slash", "../secret", "path separators not allowed"},
+		{"forward slash", "sub/secret", "path separators not allowed"},
+		{"backslash", `sub\secret`, "path separators not allowed"},
+		{"bare dot-dot", "..", "path traversal not allowed"},
+		{"bare dot", ".", "path traversal not allowed"},
+		{"deep traversal", "../../etc/passwd", "path separators not allowed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Construct the program directly (bypass parser) to test
+			// resolver validation against programmatically-crafted imports.
+			prog := &Program{
+				Molecules: []*Molecule{{
+					Name: "main",
+					Imports: []*ImportDecl{{
+						Name: tt.importName,
+						Pos:  Position{Line: 1, Col: 1},
+					}},
+				}},
+			}
+
+			result := Resolve(prog, ResolveOptions{BaseDir: dir})
+
+			if len(result.Errors) == 0 {
+				t.Fatal("expected path traversal error, got none")
+			}
+			found := false
+			for _, e := range result.Errors {
+				if contains(e.Reason, tt.wantErr) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected error containing %q, got: %v", tt.wantErr, result.Errors)
+			}
+		})
+	}
+}
+
 func writeCell(t *testing.T, dir, name, content string) {
 	t.Helper()
 	err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644)
