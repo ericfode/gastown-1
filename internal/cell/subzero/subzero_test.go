@@ -98,6 +98,37 @@ func TestScriptExecutorBlocksDangerous(t *testing.T) {
 	}
 }
 
+func TestScriptExecutorBlocksDangerousViaInputs(t *testing.T) {
+	exec := &ScriptExecutor{}
+	// Dangerous command injected via cell input — must be caught AFTER substitution
+	_, err := exec.Execute(context.Background(), &CellExec{
+		Name:   "injection",
+		Type:   "script",
+		Script: "echo {{prev.output}}",
+		Inputs: map[string]string{"prev.output": "$(gt sling pwned)"},
+	})
+	if err == nil {
+		t.Fatal("expected BLOCKED error for dangerous command injected via input")
+	}
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Fatalf("expected BLOCKED error, got: %v", err)
+	}
+
+	// Dangerous command injected via param
+	_, err = exec.Execute(context.Background(), &CellExec{
+		Name:   "injection-param",
+		Type:   "script",
+		Script: "echo {{param.cmd}}",
+		Params: map[string]string{"cmd": "gt mail send evil -m hack"},
+	})
+	if err == nil {
+		t.Fatal("expected BLOCKED error for dangerous command injected via param")
+	}
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Fatalf("expected BLOCKED error, got: %v", err)
+	}
+}
+
 func TestScriptExecutorJSONFields(t *testing.T) {
 	exec := &ScriptExecutor{}
 	result, err := exec.Execute(context.Background(), &CellExec{

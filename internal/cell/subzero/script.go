@@ -32,19 +32,20 @@ func (s *ScriptExecutor) Execute(ctx context.Context, cell *CellExec) (*CellResu
 
 	script := cell.Script
 
-	// Safety: reject dangerous commands
-	for _, pat := range dangerousPatterns {
-		if pat.MatchString(script) {
-			return nil, fmt.Errorf("BLOCKED: script contains dangerous pattern %q — Cell Sub-Zero does not allow agent spawning", pat.String())
-		}
-	}
-
-	// Resolve refs in script
+	// Resolve refs in script BEFORE safety check — inputs/params could
+	// contain dangerous commands that bypass pattern matching on the raw template.
 	for k, v := range cell.Params {
 		script = strings.ReplaceAll(script, "{{param."+k+"}}", v)
 	}
 	for k, v := range cell.Inputs {
 		script = strings.ReplaceAll(script, "{{"+k+"}}", v)
+	}
+
+	// Safety: reject dangerous commands AFTER substitution
+	for _, pat := range dangerousPatterns {
+		if pat.MatchString(script) {
+			return nil, fmt.Errorf("BLOCKED: script contains dangerous pattern %q — Cell Sub-Zero does not allow agent spawning", pat.String())
+		}
 	}
 
 	timeout := time.Duration(s.TimeoutSec) * time.Second
